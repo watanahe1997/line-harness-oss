@@ -1,4 +1,4 @@
-🌐 [English](README.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | **한국어** | [Español](README.es.md)
+🌐 [日本語](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | **한국어** | [Español](README.es.md)
 
 # LINE Harness
 
@@ -7,7 +7,9 @@
 LINE 공식 계정의 완전 오픈소스 CRM. **유료 LINE CRM SaaS (월 1~2만 엔)의 무료 대체품**.
 Cloudflare 무료 플랜에서 동작. **서버 비용 0원**. Claude Code 에서 모든 조작 가능.
 
-[![LINE Harness 도입 전체 가이드 (ClaudeCode 불필요)](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
+### ▶️ [YouTube 에서 영상 보기 (약 10분)](https://youtu.be/DiRuGaeq1sM)
+
+[![클릭하여 YouTube 재생 — LINE Harness 도입 가이드](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
 
 **현재 버전**: v0.13.2 ・ MIT License ・ TypeScript / Cloudflare Workers + D1
 

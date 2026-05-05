@@ -1,4 +1,4 @@
-🌐 [English](README.md) | [日本語](README.ja.md) | **简体中文** | [한국어](README.ko.md) | [Español](README.es.md)
+🌐 [日本語](README.md) | [English](README.en.md) | **简体中文** | [한국어](README.ko.md) | [Español](README.es.md)
 
 # LINE Harness
 
@@ -7,7 +7,9 @@
 完全开源的 LINE 官方账号 CRM。**专有 LINE CRM SaaS（月费 1-2 万日元）的免费替代方案**。
 基于 Cloudflare 免费套餐运行。**服务器费用 0 元**。可通过 Claude Code 完整操作。
 
-[![LINE Harness 配置全流程（无需 ClaudeCode）](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
+### ▶️ [在 YouTube 观看视频教程（约 10 分钟）](https://youtu.be/DiRuGaeq1sM)
+
+[![点击在 YouTube 播放 — LINE Harness 配置教程](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
 
 **当前版本**: v0.13.2 ・ MIT 许可证 ・ TypeScript / Cloudflare Workers + D1
 

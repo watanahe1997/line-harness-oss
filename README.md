@@ -1,114 +1,116 @@
-🌐 **English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [한국어](README.ko.md) | [Español](README.es.md)
+🌐 **日本語** | [English](README.en.md) | [简体中文](README.zh-CN.md) | [한국어](README.ko.md) | [Español](README.es.md)
 
 # LINE Harness
 
-> ### **[Try free on LINE](https://shudesu.github.io/line-harness-oss/)** 👈
+> ### **[LINE で無料体験する](https://shudesu.github.io/line-harness-oss/)** 👈
 
-A fully open-source CRM for LINE Official Accounts. **Free alternative to proprietary LINE CRM SaaS** (priced at ¥10,000–20,000+/month).
-Runs on Cloudflare's free tier. **$0/month server cost.** Fully operable from Claude Code.
+LINE 公式アカウントの完全オープンソース CRM。**L社 / U社 の無料代替**。
+Cloudflare 無料枠で動く。サーバー代 **0 円**。Claude Code から全操作可能。
 
-[![LINE Harness Setup Guide (No ClaudeCode required)](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
+### ▶️ [動画で見る (YouTube・約10分)](https://youtu.be/DiRuGaeq1sM)
 
-**Current version**: v0.13.2 ・ MIT License ・ TypeScript / Cloudflare Workers + D1
+[![クリックで YouTube を再生 — LINE Harness 導入の全手順](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
+
+**現バージョン**: v0.13.2 ・ MIT License ・ TypeScript / Cloudflare Workers + D1
 
 ---
 
-## Why LINE Harness?
+## なぜ LINE Harness？
 
-| | Proprietary SaaS A | Proprietary SaaS B | **LINE Harness** |
+| | L社 | U社 | **LINE Harness** |
 |---|---|---|---|
-| Monthly cost | ¥20,000+ | ¥10,000+ | **$0** |
-| Step messaging | ✅ | ✅ | ✅ |
-| Segment broadcasts | ✅ | ✅ | ✅ |
-| Rich menu switching | ✅ | ✅ | ✅ |
-| Forms (LIFF) | ✅ | ✅ | ✅ |
-| Lead scoring | ✅ | ❌ | ✅ |
-| IF-THEN automation | partial | partial | ✅ |
-| Public API | ❌ | ❌ | **all features** |
-| Claude Code (AI) integration | ❌ | ❌ | **MCP server included** |
-| BAN detection & account migration | ❌ | ❌ | **✅** |
-| Multi-account | extra contract | extra contract | **built-in** |
-| Friend deduplication | ❌ | ❌ | **✅** (cross-account, picture token matching) |
-| Source code | closed | closed | **MIT (this repo)** |
+| 月額 | 2万円〜 | 1万円〜 | **0円** |
+| ステップ配信 | ✅ | ✅ | ✅ |
+| セグメント配信 | ✅ | ✅ | ✅ |
+| リッチメニュー切替 | ✅ | ✅ | ✅ |
+| フォーム (LIFF) | ✅ | ✅ | ✅ |
+| スコアリング | ✅ | ❌ | ✅ |
+| IF-THEN 自動化 | 一部 | 一部 | ✅ |
+| API 公開 | ❌ | ❌ | **全機能** |
+| Claude Code (AI) 対応 | ❌ | ❌ | **MCP server 同梱** |
+| BAN 検知 & 自動アカウント切替 | ❌ | ❌ | **✅** |
+| マルチアカウント | 別契約 | 別契約 | **標準搭載** |
+| 友だち重複検出 | ❌ | ❌ | **✅** (picture_url トークン照合) |
+| ソースコード | 非公開 | 非公開 | **MIT (このリポ)** |
 
 ---
 
-## Quick Start
+## クイックスタート
 
-### One-command setup
+### 1 コマンドで完全セットアップ
 
 ```bash
 npx create-line-harness
 ```
 
-The CLI handles everything:
-- Cloudflare account auth (`wrangler login`)
-- D1 database creation + schema/migrations
-- Worker / dashboard deployment
-- LINE Official Account credentials registration
-- LIFF app auto-creation
-- Initial Owner user for the dashboard
+CLI が以下を全部やる:
+- Cloudflare アカウント認証 (wrangler login)
+- D1 データベース作成 + スキーマ・マイグレーション適用
+- Worker / 管理画面のデプロイ
+- LINE 公式アカウントの credentials 登録
+- LIFF アプリの自動作成
+- 管理画面初回ログイン用 Owner ユーザー作成
 
-Takes about 5 minutes. Once done, the dashboard at `https://<your-name>-admin.pages.dev` is live and ready.
+所要時間: 約 5 分。完了すれば管理画面 (`https://<your-name>-admin.pages.dev`) で即運用開始。
 
-### Requirements
+### 必要なもの
 
-- Cloudflare account (free tier is fine)
-- LINE Official Account + Messaging API channel
+- Cloudflare アカウント（無料枠で OK）
+- LINE 公式アカウント + Messaging API channel
 - Node.js 22+ / pnpm
 
 ---
 
-## Features
+## 主要機能
 
-### Messaging
-- **Step scenarios** — minute-level `delay_minutes`, conditional branching, stealth delivery
-- **Broadcasts** — to all / by tag / by segment, immediate or scheduled, auto-queued for 500+ recipients
-- **Reminders** — countdown delivery from a target date (3 days before / 1 day before / day-of)
-- **Templates** — personalize with `{{name}}` `{{uid}}` `{{auth_url:CHANNEL_ID}}`
-- **Tracked links** — click counting → automatic tagging → scenario triggering
+### 配信
+- **ステップ配信** — `delay_minutes` で分単位制御、条件分岐、ステルス送信
+- **ブロードキャスト** — 全員 / タグ / セグメント、即時 or 予約、500 人超は自動キュー化
+- **リマインダー** — 指定日時からのカウントダウン配信（セミナー 3 日前 / 1 日前 / 当日）
+- **テンプレート** — `{{name}}` `{{uid}}` `{{auth_url:CHANNEL_ID}}` で個別パーソナライズ
+- **トラッキングリンク** — クリック計測 → 自動タグ付け → シナリオ起動
 
 ### CRM
-- **Friend management** — webhook auto-registration, profile fetching, custom metadata
-- **Tags** — segmentation conditions and scenario triggers
-- **Lead scoring** — automatic score calculation from behavior
-- **Operator chat** — direct 1:1 reply from the dashboard
-- **Conversation inbox** — list unanswered conversations sorted by idle time (automated sends excluded)
-- **Friend deduplication** — auto-tag the same physical user across multiple accounts via `picture_url` token matching
+- **友だち管理** — Webhook 自動登録、プロフィール取得、カスタムメタデータ
+- **タグ** — 配信条件・シナリオトリガー
+- **スコアリング** — 行動ベースのリードスコア自動計算
+- **オペレーターチャット** — 管理画面から直接 1:1 返信
+- **Conversation Inbox** — 未返信の会話を放置時間順で一覧（自動配信は除外判定）
+- **重複検出** — `picture_url` 中間トークンで複数アカウント間の同一ユーザーを自動タグ付け
 
-### Marketing
-- **Rich menus** — per-user / per-tag automatic switching
-- **Forms (LIFF)** — fully in-LINE forms, answers auto-saved as metadata
-- **Calendar booking** — Google Calendar integrated booking via LIFF
-- **Staff management** — Owner / Admin / Staff roles, individual API keys
+### マーケティング
+- **リッチメニュー** — ユーザー別 / タグ別の自動切替
+- **フォーム (LIFF)** — LINE 内完結フォーム、回答 → メタデータ自動保存
+- **カレンダー予約** — Google Calendar 連携の予約システム (LIFF)
+- **スタッフ管理** — Owner / Admin / Staff の 3 ロール、API key 個別発行
 
-### Automation
-- **IF-THEN rules** — 7 trigger types × 6 action types
-- **Auto-replies** — exact / partial keyword matching
-- **Webhook in/out** — integration with Stripe, Slack, etc.
-- **Notification rules** — conditional alerts
-- **Delivery timing** — fully controlled by `delay_minutes` and `scheduled_at` (v0.13.2 removed all system-side time gates; you control timing operationally)
+### 自動化
+- **IF-THEN ルール** — 7 種のトリガー × 6 種のアクション
+- **自動返信** — キーワード完全一致 / 部分一致
+- **Webhook IN/OUT** — Stripe / Slack 等の外部サービス連携
+- **通知ルール** — 条件付きアラート配信
+- **配信タイミング** — `delay_minutes` と `scheduled_at` で完全制御（v0.13.2 で時間ゲート全廃、運用側ハンドル）
 
-### Multi-account
-- Manage **multiple LINE Official Accounts** from a single dashboard
-- **Per-account scope** for scenarios, tags, broadcasts
-- **BAN detection** → automatic friend migration to the next account in the pool
-- **Traffic pools** — automatic distribution across multiple accounts
+### マルチアカウント
+- **複数 LINE 公式アカウント** を 1 つのダッシュボードで管理
+- **アカウント別シナリオ・タグ・配信** スコープ
+- **BAN 検知** → 自動で次のアカウントへ友だち移行（pool 機能）
+- **トラフィックプール** — 複数アカウントへ自動振り分け
 
-### AI integration
-- **MCP server included** (`@line-harness/mcp-server`) — natural-language operation from Claude Code
-  - `list_conversations` / `get_conversation` — AI-monitored unanswered conversations
-  - `create_scenario` / `update_step` — let AI design scenarios
-  - `broadcast` / `send_message` — sending requires user confirmation
-- **Official SDK** (`@line-harness/sdk`) — typed TypeScript SDK, ESM + CJS, zero dependencies
+### AI 統合
+- **MCP Server 同梱** (`@line-harness/mcp-server`) — Claude Code から自然言語で全操作
+  - `list_conversations` / `get_conversation` — 未返信会話の AI 監視
+  - `create_scenario` / `update_step` — シナリオを AI に作らせる
+  - `broadcast` / `send_message` — メッセージ送信（要ユーザー確認）
+- **公式 SDK** (`@line-harness/sdk`) — TypeScript の型付き SDK、ESM + CJS、ゼロ依存
 
-### iOS app support
-- **`GET /api/capabilities`** — capability/version negotiation endpoint for the iOS app (the-harness-ios)
-- Available to Owner / Admin / Staff roles
+### iOS アプリ対応
+- **`GET /api/capabilities`** — iOS 公式アプリ (the-harness-ios) との互換判定エンドポイント
+- Owner / Admin / Staff いずれのロールでも利用可能
 
 ---
 
-## Architecture
+## アーキテクチャ
 
 ```
 [ LINE Platform ] ⇄ [ Cloudflare Worker (Hono) ] ⇄ [ D1 SQLite ]
@@ -118,39 +120,39 @@ Takes about 5 minutes. Once done, the dashboard at `https://<your-name>-admin.pa
                     [ MCP Server / SDK / Claude Code ]
 ```
 
-- **Worker** (`apps/worker`): API + LIFF + webhook receiver, cron-driven delivery
-- **Web** (`apps/web`): Next.js 15 dashboard (19 sections)
+- **Worker** (`apps/worker`): API + LIFF + Webhook 受信、cron で配信処理
+- **Web** (`apps/web`): Next.js 15 ダッシュボード（19 セクション）
 - **Packages**:
   - `@line-harness/sdk` — TypeScript SDK
-  - `@line-harness/mcp-server` — MCP server for Claude Code
-  - `create-line-harness` — setup CLI
-  - `@line-harness/plugin-template` — plugin extension template
-  - `@line-harness/db` — D1 migrations + helpers
-  - `@line-harness/line-sdk` — thin LINE API wrapper
-  - `@line-harness/shared` — shared type definitions
+  - `@line-harness/mcp-server` — Claude Code 用 MCP server
+  - `create-line-harness` — セットアップ CLI
+  - `@line-harness/plugin-template` — プラグイン拡張用テンプレート
+  - `@line-harness/db` — D1 マイグレーション + ヘルパー
+  - `@line-harness/line-sdk` — LINE API 薄ラッパー
+  - `@line-harness/shared` — 型定義共有
 
 ---
 
-## Resources
+## ドキュメント
 
-- [Setup walkthrough (video)](https://youtu.be/DiRuGaeq1sM)
-- [Live demo on LINE](https://shudesu.github.io/line-harness-oss/)
+- [セットアップガイド (動画)](https://youtu.be/DiRuGaeq1sM)
+- [LINE で無料体験する](https://shudesu.github.io/line-harness-oss/)
 - [npm: @line-harness/sdk](https://www.npmjs.com/package/@line-harness/sdk)
 - [npm: @line-harness/mcp-server](https://www.npmjs.com/package/@line-harness/mcp-server)
 - [npm: create-line-harness](https://www.npmjs.com/package/create-line-harness)
 
 ---
 
-## License
+## ライセンス
 
-MIT License. Free for commercial use, modification, and redistribution.
-
----
-
-## Contributing
-
-Issues and PRs welcome. Please open them against `Shudesu/line-harness-oss` (this repo).
+MIT License. 商用利用・改変・再配布自由。
 
 ---
 
-> **LINE Harness** by [@Shudesu](https://github.com/Shudesu) — an AI-native open-source LINE CRM
+## コントリビュート
+
+Issue / PR 歓迎。OSS リポへの PR は `Shudesu/line-harness-oss` (このリポ) に投げてください。
+
+---
+
+> **LINE Harness** by [@Shudesu](https://github.com/Shudesu) — AI ネイティブ時代の OSS LINE CRM

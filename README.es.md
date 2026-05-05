@@ -1,4 +1,4 @@
-🌐 [English](README.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [한국어](README.ko.md) | **Español**
+🌐 [日本語](README.md) | [English](README.en.md) | [简体中文](README.zh-CN.md) | [한국어](README.ko.md) | **Español**
 
 # LINE Harness
 
@@ -7,7 +7,9 @@
 CRM completamente open source para Cuentas Oficiales de LINE. **Alternativa gratuita a los SaaS de CRM para LINE propietarios** (con precios desde ¥10,000–20,000/mes).
 Funciona sobre el plan gratuito de Cloudflare. **Costo de servidor: $0/mes**. Operable al 100% desde Claude Code.
 
-[![Guía completa de configuración de LINE Harness (sin ClaudeCode)](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
+### ▶️ [Ver el tutorial en YouTube (~10 min)](https://youtu.be/DiRuGaeq1sM)
+
+[![Haz clic para reproducir en YouTube — Guía de configuración de LINE Harness](https://img.youtube.com/vi/DiRuGaeq1sM/maxresdefault.jpg)](https://youtu.be/DiRuGaeq1sM)
 
 **Versión actual**: v0.13.2 ・ Licencia MIT ・ TypeScript / Cloudflare Workers + D1
 
