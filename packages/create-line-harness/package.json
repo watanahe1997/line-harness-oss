@@ -11,7 +11,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "prepublishOnly": "node ./scripts/guard-source-publish.mjs"
   },
   "keywords": [
     "line",
