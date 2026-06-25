@@ -24,6 +24,12 @@ const menuSections = [
     ],
   },
   {
+    label: '賃貸仲介',
+    items: [
+      { href: '/rental', label: '見積・審査申込', icon: 'M3 21h18M5 21V7l7-4 7 4v14M9 10h6M9 14h6M9 18h6' },
+    ],
+  },
+  {
     label: '配信',
     items: [
       { href: '/friend-add-settings', label: '友だち追加時設定', icon: 'M12 6v6m0 0v6m0-6h6m-6 0H6' },

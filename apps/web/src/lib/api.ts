@@ -106,6 +106,13 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
   return res.json() as Promise<T>
 }
 
+/** Fetch an authenticated non-JSON response (CSV, private PDF/image). */
+export async function fetchApiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_URL}${path}`, { credentials: 'include' })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.blob()
+}
+
 export type FriendListParams = {
   offset?: string
   limit?: string | number
