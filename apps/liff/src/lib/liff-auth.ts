@@ -16,10 +16,15 @@ export async function initLiff(): Promise<void> {
     liff.login();
     return;
   }
-  const profile = await liff.getProfile();
-  _lineUserId = profile.userId;
-  // id_token は Worker 側で LINE Login verify API を叩いて caller を確定するために使う。
-  _idToken = liff.getIDToken();
+
+  // Worker 側で LINE Login の id_token を検証して、操作している本人を確認する。
+  // プロフィール取得は不要なので呼ばない。これにより LIFF 側の必要権限を最小化できる。
+  const idToken = liff.getIDToken();
+  if (!idToken) {
+    throw new Error('LINE本人確認に失敗しました。もう一度LINEから開き直してください。');
+  }
+  _idToken = idToken;
+  _lineUserId = liff.getDecodedIDToken()?.sub ?? null;
 }
 
 export function getLiffId(): string {
