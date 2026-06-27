@@ -16,7 +16,7 @@ type Status =
   | { kind: 'fork'; reason: string; version: string }
   | { kind: 'upgrade'; current: string; target: ReleaseEntry }
 
-const updateBannerEnabled = process.env.NEXT_PUBLIC_UPDATE_BANNER_ENABLED !== 'false'
+const updateBannerEnabled = process.env.NEXT_PUBLIC_UPDATE_BANNER_ENABLED === 'true'
 
 export function UpdateBanner() {
   const [status, setStatus] = useState<Status>({ kind: 'loading' })
