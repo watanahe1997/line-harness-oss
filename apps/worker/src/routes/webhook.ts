@@ -33,6 +33,99 @@ const webhook = new Hono<Env>();
 // 128 MB Cloudflare Workers memory ceiling.
 const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024; // 1 MiB
 
+function buildRentalQuoteFormUrl(liffUrl?: string | null): string | null {
+  if (!liffUrl) return null;
+  try {
+    const base = liffUrl.trim().replace(/\/+$/, '');
+    const url = new URL(`${base}/rental/quote`);
+    if (url.hostname === 'liff.line.me') {
+      const liffId = url.pathname.match(/^\/([^/?#]+)/)?.[1];
+      if (liffId && !url.searchParams.has('liffId')) url.searchParams.set('liffId', liffId);
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function rentalFriendAddMessage(quoteFormUrl: string): string {
+  return [
+    '友だち追加ありがとうございます。',
+    '',
+    'お部屋の見積依頼は、以下のフォームからお送りください。',
+    quoteFormUrl,
+    '',
+    '見積が届いたら内容をご確認いただき、審査申込をご希望の場合は「この部屋で審査申込を希望する」を押してください。',
+  ].join('\n');
+}
+
+function rentalPreApplicationAutoReplyMessage(quoteFormUrl: string): string {
+  return [
+    'メッセージありがとうございます。',
+    '',
+    '恐れ入りますが、審査申込希望を押していただく前の個別お問い合わせは受け付けておりません。',
+    '',
+    '見積依頼がまだの場合は、以下のフォームからご依頼ください。',
+    quoteFormUrl,
+    '',
+    '見積確認後、申込を希望するお部屋の「この部屋で審査申込を希望する」を押すと、担当者が個別にご案内します。',
+  ].join('\n');
+}
+
+async function hasRentalApplicationRequested(db: D1Database, friendId: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT 1 AS ok
+     FROM rental_quote_requests r
+     JOIN rental_estimates e ON e.request_id = r.id
+     WHERE r.friend_id = ?
+       AND r.deleted_at IS NULL
+       AND e.deleted_at IS NULL
+       AND e.status IN ('application_requested', 'application_submitted', 'individual_followup', 'contracted')
+     LIMIT 1`,
+  ).bind(friendId).first<{ ok: number }>();
+  return Boolean(row);
+}
+
+async function replyAndLogText(
+  db: D1Database,
+  lineClient: LineClient,
+  friend: Friend,
+  replyToken: string,
+  text: string,
+  source: string,
+  lineAccountId: string | null,
+): Promise<void> {
+  await lineClient.replyMessage(replyToken, [{ type: 'text', text }]);
+  await db.prepare(
+    `INSERT INTO messages_log (
+       id, friend_id, direction, message_type, content, delivery_type, source, line_account_id, created_at
+     ) VALUES (?, ?, 'outgoing', 'text', ?, 'reply', ?, ?, ?)`,
+  ).bind(crypto.randomUUID(), friend.id, text, source, lineAccountId, jstNow()).run();
+}
+
+async function maybeReplyRentalPreApplication(
+  db: D1Database,
+  lineClient: LineClient,
+  friend: Friend,
+  replyToken: string,
+  liffUrl: string | undefined,
+  lineAccountId: string | null,
+): Promise<boolean> {
+  const quoteFormUrl = buildRentalQuoteFormUrl(liffUrl);
+  if (!quoteFormUrl) return false;
+  if (await hasRentalApplicationRequested(db, friend.id)) return false;
+  await replyAndLogText(
+    db,
+    lineClient,
+    friend,
+    replyToken,
+    rentalPreApplicationAutoReplyMessage(quoteFormUrl),
+    'auto_reply',
+    lineAccountId,
+  );
+  return true;
+}
+
 async function ensureFriendFromWebhookUser(
   db: D1Database,
   lineClient: LineClient,
@@ -246,6 +339,7 @@ async function handleEvent(
 
     // friend_add シナリオに登録（このアカウントのシナリオのみ）
     // Skip entirely when a referral link explicitly overrides (run_account_friend_add_scenarios=0).
+    let followReplyTokenConsumed = false;
     const scenarios = runAccountScenarios ? await getScenarios(db) : [];
     for (const scenario of scenarios) {
       // Only trigger scenarios belonging to this account (or unassigned for backward compat)
@@ -286,6 +380,7 @@ async function handleEvent(
                 const expandedContent = expandVariables(resolved.messageContent, { ...friend, metadata: resolvedMeta } as Parameters<typeof expandVariables>[1]);
                 const message = buildMessage(resolved.messageType, expandedContent);
                 await lineClient.replyMessage(event.replyToken, [message]);
+                followReplyTokenConsumed = true;
                 console.log(`Immediate delivery: sent step ${firstStep.id} to ${userId}`);
 
                 // Log what was actually delivered (post buildMessage normalization)
@@ -361,6 +456,26 @@ async function handleEvent(
     }
 
     // イベントバス発火: friend_add（replyToken は Step 0 で使用済みの可能性あり）
+    if (!followReplyTokenConsumed) {
+      const quoteFormUrl = buildRentalQuoteFormUrl(liffUrl);
+      if (quoteFormUrl) {
+        try {
+          await replyAndLogText(
+            db,
+            lineClient,
+            friend,
+            event.replyToken,
+            rentalFriendAddMessage(quoteFormUrl),
+            'rental_quote_form_invite',
+            lineAccountId,
+          );
+          followReplyTokenConsumed = true;
+        } catch (err) {
+          console.error('[follow] failed to send rental quote form invite', err);
+        }
+      }
+    }
+
     await fireEvent(db, 'friend_add', { friendId: friend.id, eventData: { displayName: friend.display_name } }, lineAccessToken, lineAccountId);
     return;
   }
@@ -516,6 +631,15 @@ async function handleEvent(
       )
       .bind(crypto.randomUUID(), friend.id, msg.type, finalContent, jstNow())
       .run();
+    let replied = false;
+    try {
+      replied = await maybeReplyRentalPreApplication(db, lineClient, friend, event.replyToken, liffUrl, lineAccountId);
+    } catch (err) {
+      console.error('Failed to send rental pre-application auto-reply for non-text message', err);
+    }
+    if (!replied) {
+      await upsertChatOnMessage(db, friend.id);
+    }
     return;
   }
 
@@ -663,6 +787,18 @@ async function handleEvent(
     }
 
     // auto_replies にマッチしなかった = 自発メッセージ → unread にする
+    if (!matched) {
+      try {
+        const replied = await maybeReplyRentalPreApplication(db, lineClient, friend, event.replyToken, liffUrl, lineAccountId);
+        if (replied) {
+          matched = true;
+          replyTokenConsumed = true;
+        }
+      } catch (err) {
+        console.error('Failed to send rental pre-application auto-reply', err);
+      }
+    }
+
     if (!matched) {
       await upsertChatOnMessage(db, friend.id);
     }
