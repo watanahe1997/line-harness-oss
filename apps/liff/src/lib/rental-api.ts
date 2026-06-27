@@ -78,6 +78,26 @@ export const rentalApi = {
     request<{ uploaded: boolean }>(`/api/liff/rental/applications/${encodeURIComponent(applicationId)}/identity`, {
       method: 'POST', body: JSON.stringify(body),
     }),
+  floorPlanBlob: async (estimateId: string): Promise<{ blobUrl: string; mimeType: string }> => {
+    const response = await fetch(url(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/floor-plan`), {
+      headers: { Authorization: `Bearer ${getIdToken()}` },
+    });
+    if (!response.ok) {
+      let message = '図面を開けませんでした';
+      try {
+        const parsed = await response.json() as { error?: string };
+        if (parsed.error) message = parsed.error;
+      } catch {
+        // keep default message
+      }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    return {
+      blobUrl: URL.createObjectURL(blob),
+      mimeType: response.headers.get('Content-Type') || blob.type || 'application/octet-stream',
+    };
+  },
   openFloorPlan: async (estimateId: string): Promise<void> => {
     const response = await fetch(url(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/floor-plan`), {
       headers: { Authorization: `Bearer ${getIdToken()}` },
