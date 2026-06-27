@@ -74,6 +74,14 @@ export const rentalApi = {
   }>(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/applications`, {
     method: 'POST', body: JSON.stringify(body),
   }),
+  requestApplication: (estimateId: string) => request<{
+    requested: boolean;
+    alreadyRequested: boolean;
+    alreadySubmitted?: boolean;
+    notificationSent: boolean;
+  }>(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/application-request`, {
+    method: 'POST',
+  }),
   uploadIdentity: (applicationId: string, body: { data: string; mimeType: string; filename: string }) =>
     request<{ uploaded: boolean }>(`/api/liff/rental/applications/${encodeURIComponent(applicationId)}/identity`, {
       method: 'POST', body: JSON.stringify(body),

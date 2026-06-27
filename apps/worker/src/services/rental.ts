@@ -254,6 +254,14 @@ export function quoteReadyMessage(listUrl: string): string {
   ].join('\n');
 }
 
+export function applicationRequestReceiptMessage(): string {
+  return [
+    '審査申込のご希望を受け付けました。',
+    '',
+    '物件ごとに必要なお手続きが異なるため、担当者が内容を確認し、今後の手続きをLINEで個別にご案内します。',
+  ].join('\n');
+}
+
 export function applicationReceiptMessage(): string {
   return [
     '審査申込情報を受け付けました。',

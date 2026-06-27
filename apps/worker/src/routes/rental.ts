@@ -12,6 +12,7 @@ import {
   getTags,
   jstNow,
   removeTagFromFriend,
+  upsertChatOnMessage,
   writeRentalAuditLog,
   type Friend,
   type RentalApplicationStatus,
@@ -26,6 +27,7 @@ import {
   RENTAL_APPLICATION_STATUS_LABELS,
   RENTAL_SAFE_LINE_MESSAGES,
   RENTAL_STATUS_LABELS,
+  applicationRequestReceiptMessage,
   applicationReceiptMessage,
   calculatePaymentTotal,
   csvCell,
@@ -387,6 +389,101 @@ rental.get('/api/liff/rental/estimates/:id/application-preview', async (c) => {
       existingApplication: existing ? { id: existing.id, status: existing.status } : null,
     },
   });
+});
+
+rental.post('/api/liff/rental/estimates/:id/application-request', async (c) => {
+  try {
+    const identity = await liffIdentity(c);
+    if (identity instanceof Response) return identity;
+    const estimate = await getRentalEstimateOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
+    if (!estimate) return c.json({ success: false, error: '申込対象が見つかりません' }, 404);
+
+    const existingApplication = await c.env.DB.prepare(
+      `SELECT id FROM rental_applications WHERE estimate_id = ? AND deleted_at IS NULL`,
+    ).bind(estimate.id).first<{ id: string }>();
+    if (existingApplication) {
+      return c.json({
+        success: true,
+        data: {
+          requested: true,
+          alreadyRequested: true,
+          alreadySubmitted: true,
+          notificationSent: false,
+        },
+      });
+    }
+
+    if (!['quote_presented', 'application_requested'].includes(estimate.status)) {
+      return c.json({ success: false, error: 'この見積では審査申込希望を受け付けできません' }, 409);
+    }
+
+    const noticeText = [
+      `【審査申込希望】${estimate.property_name} ${estimate.room_number}号室`,
+      `estimate_id: ${estimate.id}`,
+      `request_id: ${estimate.request_id}`,
+      'お客様がこの部屋で審査申込を希望しています。',
+      '管理会社ごとの手続きに合わせて、LINEで個別対応してください。',
+    ].join('\n');
+    const existingNotice = await c.env.DB.prepare(
+      `SELECT id FROM messages_log
+       WHERE friend_id = ? AND direction = 'incoming' AND source = 'rental_application_requested'
+         AND content LIKE ?
+       LIMIT 1`,
+    ).bind(identity.friend.id, `%${estimate.id}%`).first<{ id: string }>();
+
+    const now = jstNow();
+    if (estimate.status !== 'application_requested') {
+      await c.env.DB.prepare(
+        `UPDATE rental_estimates SET status = 'application_requested', updated_at = ? WHERE id = ?`,
+      ).bind(now, estimate.id).run();
+      await syncRequestStatus(c.env.DB, estimate.request_id);
+    }
+    await setRentalStatusTag(c, identity.friend.id, RENTAL_STATUS_LABELS.application_requested);
+
+    if (!existingNotice) {
+      await c.env.DB.prepare(
+        `INSERT INTO messages_log (
+           id, friend_id, direction, message_type, content, source, line_account_id, created_at
+         ) VALUES (?, ?, 'incoming', 'text', ?, 'rental_application_requested', ?, ?)`,
+      ).bind(crypto.randomUUID(), identity.friend.id, noticeText, identity.friend.line_account_id, now).run();
+      await upsertChatOnMessage(c.env.DB, identity.friend.id);
+    }
+
+    await writeRentalAuditLog(c.env.DB, {
+      actorType: 'line_user',
+      actorId: identity.lineUserId,
+      action: 'request_application',
+      entityType: 'estimate',
+      entityId: estimate.id,
+      metadata: {
+        requestId: estimate.request_id,
+        alreadyRequested: estimate.status === 'application_requested' || Boolean(existingNotice),
+      },
+    });
+
+    let notificationSent = false;
+    if (!existingNotice) {
+      notificationSent = true;
+      try {
+        await sendLineText(c, identity.friend, applicationRequestReceiptMessage(), 'rental_application_request_receipt');
+      } catch (error) {
+        notificationSent = false;
+        console.error('rental application request receipt push failed:', errorMessage(error));
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        requested: true,
+        alreadyRequested: estimate.status === 'application_requested' || Boolean(existingNotice),
+        notificationSent,
+      },
+    });
+  } catch (error) {
+    console.error('POST rental application request:', error);
+    return c.json({ success: false, error: '審査申込希望を受け付けできませんでした' }, 500);
+  }
 });
 
 const APPLICATION_TEXT_FIELDS = [
