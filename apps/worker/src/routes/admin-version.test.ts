@@ -19,7 +19,7 @@ describe('GET /admin/version', () => {
       liff_hash: string;
       released_at: string;
     };
-    expect(j.version).toMatch(/^\d+\.\d+\.\d+(-\w+)?$/);
+    expect(j.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
     expect(j.worker_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(j.admin_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(j.liff_hash).toMatch(/^sha256:[a-f0-9]{64}$/);

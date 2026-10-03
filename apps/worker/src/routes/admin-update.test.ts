@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
+import { BUNDLE_VERSION } from '../_version.js';
 
 // Mock the engine before importing the route. Tests exercise HTTP behavior
 // only — the engine itself is covered by its own package tests, so here we
@@ -134,17 +135,17 @@ describe('POST /admin/update/start', () => {
   });
 
   it('returns 200 with already_latest when target.version === current.version', async () => {
-    // Force the target to match the build-time current version (0.0.0-dev).
+    // Match the current build, including release builds with injected metadata.
     fetchManifest.mockResolvedValue({
       ...baseManifest,
-      latest: '0.0.0-dev',
-      releases: [{ ...baseRelease, version: '0.0.0-dev' }],
+      latest: BUNDLE_VERSION,
+      releases: [{ ...baseRelease, version: BUNDLE_VERSION }],
     });
     // detectFork returns vanilla because hashes happen to match (the engine
     // would actually compare them; we shortcut by returning vanilla here).
     detectFork.mockReturnValue({
       kind: 'vanilla',
-      matchedRelease: { ...baseRelease, version: '0.0.0-dev' },
+      matchedRelease: { ...baseRelease, version: BUNDLE_VERSION },
     });
     const res = await request('/admin/update/start', {
       method: 'POST',
