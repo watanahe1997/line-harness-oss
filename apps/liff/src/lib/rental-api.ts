@@ -1,3 +1,4 @@
+import type { RentalMoneyKey } from '@line-crm/shared';
 import { getIdToken, getLiffId } from './liff-auth.js';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '';
@@ -29,6 +30,8 @@ export type RentalEstimate = {
   roomNumber: string;
   status: string;
   statusLabel: string;
+  pricingVersion: number; revision: number; monthlyOtherCost: number | null;
+  monthlyTotal: number | null; monthlySubtotal: number; upfrontTotal: number | null; upfrontSubtotal: number; effectiveTotal: number | null; unknownInitialFields: RentalMoneyKey[];
   rent: number | null;
   managementFee: number | null;
   deposit: number | null;
@@ -51,6 +54,8 @@ export type RentalEstimate = {
 };
 
 export const rentalApi = {
+  requests: () => request<Array<{ id: string; propertyName: string; createdAt: string; status: string; statusLabel: string; roomCount: number; presentedCount: number }>>('/api/liff/rental/requests'),
+  versions: (estimateId: string) => request<RentalEstimate[]>('/api/liff/rental/estimates/' + encodeURIComponent(estimateId) + '/versions'),
   history: () => request<{
     requests: Array<{
       id: string; propertyName: string; propertyUrl: string | null; createdAt: string;
@@ -74,6 +79,7 @@ export const rentalApi = {
     propertyName: string;
     propertyUrl: string | null;
     roomNumber: string;
+    revision: number; estimate: RentalEstimate; alreadyRequested: boolean;
     existingApplication: { id: string; status: string } | null;
   }>(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/application-preview`),
   apply: (estimateId: string, body: Record<string, unknown>) => request<{
@@ -82,20 +88,20 @@ export const rentalApi = {
   }>(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/applications`, {
     method: 'POST', body: JSON.stringify(body),
   }),
-  requestApplication: (estimateId: string) => request<{
+  requestApplication: (estimateId: string, expectedRevision: number) => request<{
     requested: boolean;
     alreadyRequested: boolean;
     alreadySubmitted?: boolean;
     notificationSent: boolean;
   }>(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/application-request`, {
-    method: 'POST',
+    method: 'POST', body: JSON.stringify({ expectedRevision }),
   }),
   uploadIdentity: (applicationId: string, body: { data: string; mimeType: string; filename: string }) =>
     request<{ uploaded: boolean }>(`/api/liff/rental/applications/${encodeURIComponent(applicationId)}/identity`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-  floorPlanBlob: async (estimateId: string): Promise<{ blobUrl: string; mimeType: string }> => {
-    const response = await fetch(url(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/floor-plan`), {
+  floorPlanBlob: async (estimateId: string, revision?: number): Promise<{ blobUrl: string; mimeType: string }> => {
+    const response = await fetch(url(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/floor-plan${revision == null ? "" : "?revision=" + revision}`), {
       headers: { Authorization: `Bearer ${getIdToken()}` },
     });
     if (!response.ok) {
@@ -114,7 +120,7 @@ export const rentalApi = {
       mimeType: response.headers.get('Content-Type') || blob.type || 'application/octet-stream',
     };
   },
-  openFloorPlan: async (estimateId: string): Promise<void> => {
+  openFloorPlan: async (estimateId: string, revision?: number): Promise<void> => {
     const response = await fetch(url(`/api/liff/rental/estimates/${encodeURIComponent(estimateId)}/floor-plan`), {
       headers: { Authorization: `Bearer ${getIdToken()}` },
     });

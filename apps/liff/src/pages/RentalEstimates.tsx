@@ -1,26 +1,8 @@
+import RentalPriceSummary from '../components/RentalPriceSummary.js';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import RentalLayout, { cardClass, primaryButtonClass } from '../components/RentalLayout.js';
 import { rentalApi, type RentalEstimate } from '../lib/rental-api.js';
-
-const moneyRows: Array<[keyof RentalEstimate, string]> = [
-  ['rent', '家賃'],
-  ['managementFee', '共益費・管理費'],
-  ['deposit', '敷金'],
-  ['keyMoney', '礼金'],
-  ['advanceRent', '前家賃'],
-  ['proratedRent', '日割り家賃'],
-  ['fireInsurance', '火災保険'],
-  ['guaranteeCompanyFee', '保証会社費用'],
-  ['keyExchangeFee', '鍵交換費'],
-  ['cleaningFee', 'クリーニング費'],
-  ['otherInitialCost', 'その他初期費用'],
-  ['brokerageFee', '仲介手数料'],
-  ['brokerageDiscount', '仲介手数料割引'],
-  ['cashback', 'キャッシュバック'],
-];
-
-const yen = (value: unknown) => typeof value === 'number' ? `${value.toLocaleString('ja-JP')}円` : '確認中';
 
 type FloorPlanPreview = {
   estimateId: string;
@@ -34,6 +16,7 @@ export default function RentalEstimates() {
   const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof rentalApi.estimates>> | null>(null);
   const [error, setError] = useState('');
+  const [versions, setVersions] = useState<Record<string, RentalEstimate[]>>({});
   const [opening, setOpening] = useState<string | null>(null);
   const [floorPlan, setFloorPlan] = useState<FloorPlanPreview | null>(null);
   const [expandedFloorPlan, setExpandedFloorPlan] = useState<FloorPlanPreview | null>(null);
@@ -87,6 +70,7 @@ export default function RentalEstimates() {
             )}
           </section>
 
+          {data.estimates.length === 0 && <section className={cardClass}><h3 className="font-bold">見積を準備しています</h3><p className="mt-2 text-sm text-gray-600">準備でき次第、LINEでご案内します。</p></section>}
           {data.estimates.map((estimate) => (
             <section key={estimate.id} className={cardClass}>
               <div className="flex items-start justify-between gap-3">
@@ -96,26 +80,7 @@ export default function RentalEstimates() {
                 </span>
               </div>
 
-              <dl className="mt-4 divide-y divide-gray-100 text-sm">
-                {moneyRows.map(([key, label]) => (
-                  <div key={String(key)} className="flex justify-between gap-4 py-2">
-                    <dt className="text-gray-500">{label}</dt>
-                    <dd className="font-medium">{yen(estimate[key])}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              <div className="mt-4 flex items-end justify-between rounded-xl bg-gray-50 p-4">
-                <span className="text-sm font-semibold">支払総額目安</span>
-                <span className="text-xl font-bold text-[#06C755]">{yen(estimate.paymentTotal)}</span>
-              </div>
-
-              {estimate.customerNotes && (
-                <p className="mt-3 whitespace-pre-wrap rounded-xl bg-amber-50 p-3 text-sm leading-6 text-amber-900">
-                  {estimate.customerNotes}
-                </p>
-              )}
-
+              <RentalPriceSummary estimate={estimate} />
               <div className="mt-4 space-y-2">
                 {estimate.hasFloorPlan && (
                   <button
@@ -173,14 +138,20 @@ export default function RentalEstimates() {
                 {['quote_presented', 'application_requested'].includes(estimate.status) && (
                   <button
                     className={primaryButtonClass}
+                    disabled={estimate.status === 'application_requested'}
                     onClick={() => navigate(`/rental/estimates/${estimate.id}/confirm`)}
                   >
-                    {estimate.roomNumber}号室で審査申込へ進む
+                    {estimate.status === 'application_requested' ? '審査申込希望を受付済み' : 'この部屋で審査申込を希望する'}
                   </button>
                 )}
               </div>
 
-              <p className="mt-3 break-all text-[10px] text-gray-300">estimate_id: {estimate.id}</p>
+              {estimate.sentAt && <p className="mt-3 text-xs text-gray-500">提示日：{estimate.sentAt.slice(0, 10)} ・ 内容版 {estimate.revision}</p>}
+              <button type="button" className="mt-3 text-xs text-[#049b43] underline" onClick={async () => {
+                try { setVersions((current) => ({ ...current, [estimate.id]: [] })); const values = await rentalApi.versions(estimate.id); setVersions((current) => ({ ...current, [estimate.id]: values })); }
+                catch (error) { setError(error instanceof Error ? error.message : '履歴を読み込めませんでした'); }
+              }}>以前の提示内容を見る</button>
+              {versions[estimate.id] && <div className="mt-3 space-y-3">{versions[estimate.id].length <= 1 ? <p className="text-xs text-gray-500">以前の提示内容はありません。</p> : versions[estimate.id].slice(1).map((version) => <details key={version.revision} className="rounded-xl border p-3"><summary className="text-sm">{version.sentAt?.slice(0, 10)} の提示内容（版 {version.revision}）</summary><RentalPriceSummary estimate={version} />{version.hasFloorPlan && <button type="button" className="mt-3 text-sm underline" onClick={async () => { try { const result = await rentalApi.floorPlanBlob(estimate.id, version.revision); setFloorPlan({ estimateId: estimate.id, ...result, name: version.floorPlanName || '図面' }); } catch { setError('図面を開けませんでした'); } }}>この提示時の図面を見る</button>}</details>)}</div>}
             </section>
           ))}
 

@@ -35,6 +35,8 @@ function setupSqlite() {
   for (const file of readdirSync(join(PACKAGE_ROOT, 'migrations')).filter((name) => name.endsWith('.sql')).sort()) {
     execSafe(db, readFileSync(join(PACKAGE_ROOT, 'migrations', file), 'utf8'));
   }
+  // This suite explicitly opts into mileage; rental installations leave it paused.
+  db.exec("UPDATE mileage_programs SET status = 'active' WHERE id = 'default'; UPDATE mileage_rules SET is_active = 1 WHERE program_id = 'default';");
   db.prepare(`INSERT INTO users (id, display_name) VALUES ('user-1', '横断ユーザー')`).run();
   db.prepare(`INSERT INTO line_accounts (id, channel_id, name, channel_access_token, channel_secret)
               VALUES ('account-1', 'channel-1', '公式A', 'token', 'secret'),

@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createRentalQuoteRequest } from '@line-crm/db';
@@ -71,7 +72,7 @@ describe('customer quote history (real SQLite, no production LINE/D1)', () => {
     const response = await history();
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    const body = await response.json();
+    const body: any = await response.json();
     expect(body.data.estimateCount).toBe(2);
     expect(body.data.requests.map((request: any) => request.propertyName)).toEqual(['新しい物件', '以前の物件']);
     expect(body.data.requests.flatMap((request: any) => request.estimates.map((estimate: any) => estimate.roomNumber))).toEqual(['201', '101']);
@@ -81,7 +82,7 @@ describe('customer quote history (real SQLite, no production LINE/D1)', () => {
   });
 
   test('separates customer B from customer A', async () => {
-    const body = await (await history('customer-b')).json();
+    const body: any = await (await history('customer-b')).json();
     expect(body.data.estimateCount).toBe(1);
     expect(body.data.requests[0].propertyName).toBe('別のお客様の物件');
   });
@@ -93,14 +94,14 @@ describe('customer quote history (real SQLite, no production LINE/D1)', () => {
 
   test('returns an empty history for a customer without sent quotes', async () => {
     sqlite.exec("UPDATE rental_estimates SET sent_at = NULL");
-    const body = await (await history()).json();
+    const body: any = await (await history()).json();
     expect(body.data).toEqual({ requests: [], estimateCount: 0 });
   });
 
   test('opening request details still excludes unfinished and deleted quotes', async () => {
     const response = await app.request(`/api/liff/rental/requests/${firstRequest}/estimates`,
       { headers: { Authorization: 'Bearer customer-a' } }, { DB: db });
-    const body = await response.json();
+    const body: any = await response.json();
     expect(body.data.estimates.map((estimate: any) => estimate.roomNumber)).toEqual(['101']);
     expect((await app.request(`/api/liff/rental/requests/${firstRequest}/estimates`,
       { headers: { Authorization: 'Bearer customer-b' } }, { DB: db })).status).toBe(404);

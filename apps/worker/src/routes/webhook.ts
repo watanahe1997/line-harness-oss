@@ -73,7 +73,9 @@ function rentalPreApplicationAutoReplyMessage(quoteFormUrl: string): string {
   ].join('\n');
 }
 
-async function hasRentalApplicationRequested(db: D1Database, friendId: string): Promise<boolean> {
+export async function hasRentalApplicationRequested(db: D1Database, friendId: string): Promise<boolean> {
+  const enabled = await db.prepare('SELECT friend_id FROM rental_customer_support WHERE friend_id = ?').bind(friendId).first();
+  if (enabled) return true;
   const row = await db.prepare(
     `SELECT 1 AS ok
      FROM rental_quote_requests r
@@ -716,7 +718,7 @@ async function handleEvent(
 
     // 自動返信チェック（このアカウントのルール + グローバルルールのみ）。
     // silent タイプは返信しないが matched=true になり unread / push を抑止する。
-    const { matched, replyTokenConsumed } = await matchAndReply(
+    let { matched, replyTokenConsumed } = await matchAndReply(
       db,
       lineClient,
       friend,

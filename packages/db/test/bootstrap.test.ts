@@ -60,7 +60,7 @@ function readSchemaObjects(db: Database.Database) {
           name
       `,
     )
-    .all() as Array<{ type: string; name: string; sql: string }>;
+    .all().map((row) => ({ ...(row as { type: string; name: string; sql: string }), sql: (row as { sql: string }).sql.replace(/\r\n/g, '\n') }));
 }
 
 describe('bootstrap.sql', () => {
@@ -83,7 +83,7 @@ describe('bootstrap.sql', () => {
     expect(readSchemaObjects(bootstrapDb)).toEqual(readSchemaObjects(replayDb));
   });
 
-  it('includes built-in auto-reply seed data for clean installs', () => {
+  it('includes the mileage reply but leaves it disabled for rental clean installs', () => {
     const db = new Database(':memory:');
     db.exec(readFileSync(BOOTSTRAP_PATH, 'utf8'));
 
@@ -107,7 +107,7 @@ describe('bootstrap.sql', () => {
       match_type: 'exact',
       response_type: 'flex',
       line_account_id: null,
-      is_active: 1,
+      is_active: 0,
     });
     expect(rule?.response_content).toContain('?page=affiliate&liffId={{liff_id}}');
   });

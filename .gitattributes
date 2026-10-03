@@ -6,3 +6,5 @@
 # files to CRLF, which makes `generate-bootstrap.mjs --check` (and the
 # bootstrap.sql sync test) fail even with no real schema drift.
 *.sql text eol=lf
+# Keep executable ESM shebangs readable by the Windows Vitest/Vite loader.
+*.mjs text eol=lf

@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { rentalPricing, RENTAL_CASHBACK_NOTE } from '@line-crm/shared';
+import { publishRentalQuotes } from '../services/rental-publication.js';
 import { LineClient } from '@line-crm/line-sdk';
 import {
   addTagToFriend,
@@ -31,6 +33,7 @@ import {
   applicationRequestReceiptMessage,
   applicationReceiptMessage,
   calculatePaymentTotal,
+  estimatePriceValues,
   csvCell,
   decodeRentalFile,
   isRentalApplicationStatus,
@@ -116,42 +119,6 @@ async function sendLineText(c: any, friend: Friend, text: string, source: string
   ).bind(crypto.randomUUID(), friend.id, text, source, friend.line_account_id, jstNow()).run();
 }
 
-async function sendQuoteReadyFlex(c: any, friend: Friend, listUrl: string): Promise<void> {
-  let accessToken = c.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (friend.line_account_id) {
-    const account = await getLineAccountById(c.env.DB, friend.line_account_id);
-    if (account) accessToken = account.channel_access_token;
-  }
-  const text = quoteReadyMessage(listUrl);
-  const message = {
-    type: 'flex' as const,
-    altText: '概算見積ができました。見積一覧をご確認ください。',
-    contents: {
-      type: 'bubble',
-      body: {
-        type: 'box', layout: 'vertical', spacing: 'md',
-        contents: [
-          { type: 'text', text: '概算見積ができました。', weight: 'bold', size: 'lg', wrap: true },
-          { type: 'text', text: '見積内容と図面をあわせてご確認ください。', size: 'sm', color: '#555555', wrap: true },
-          { type: 'text', text: '審査申込をご希望の場合は、該当する見積の「審査申込へ進む」ボタンからお進みください。', size: 'sm', color: '#555555', wrap: true },
-          { type: 'text', text: '※概算見積のため、正式な金額は審査通過後の正式見積で確定します。', size: 'xs', color: '#888888', wrap: true },
-        ],
-      },
-      footer: {
-        type: 'box', layout: 'vertical',
-        contents: [{ type: 'button', style: 'primary', color: '#06C755', action: { type: 'uri', label: '見積一覧を確認', uri: listUrl } }],
-      },
-    },
-  };
-  const client = new LineClient(accessToken);
-  await client.pushMessage(friend.line_user_id, [message as any]);
-  await c.env.DB.prepare(
-    `INSERT INTO messages_log (
-       id, friend_id, direction, message_type, content, source, line_account_id, created_at
-     ) VALUES (?, ?, 'outgoing', 'flex', ?, 'rental_quote_ready', ?, ?)`,
-  ).bind(crypto.randomUUID(), friend.id, text, friend.line_account_id, jstNow()).run();
-}
-
 async function setRentalStatusTag(c: any, friendId: string, label: string): Promise<void> {
   const db = c.env.DB as D1Database;
   const tags = await getTags(db);
@@ -200,6 +167,7 @@ async function setRentalStatusTag(c: any, friendId: string, label: string): Prom
 }
 
 function serializeEstimate(row: RentalEstimate, includeInternal = false) {
+  const price = rentalPricing(estimatePriceValues(row));
   const value: Record<string, unknown> = {
     id: row.id,
     requestId: row.request_id,
@@ -209,6 +177,9 @@ function serializeEstimate(row: RentalEstimate, includeInternal = false) {
     statusLabel: RENTAL_STATUS_LABELS[row.status],
     rent: row.rent,
     managementFee: row.management_fee,
+    monthlyOtherCost: row.monthly_other_cost,
+    pricingVersion: row.pricing_version, revision: row.revision,
+    ...price, cashbackNote: RENTAL_CASHBACK_NOTE,
     deposit: row.deposit,
     keyMoney: row.key_money,
     advanceRent: row.advance_rent,
@@ -225,11 +196,18 @@ function serializeEstimate(row: RentalEstimate, includeInternal = false) {
     customerNotes: row.customer_notes,
     hasFloorPlan: Boolean(row.floor_plan_key),
     floorPlanName: row.floor_plan_name,
+    floorPlanMime: row.floor_plan_mime,
     sentAt: row.sent_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-  if (includeInternal) value.managerMemo = row.manager_memo;
+  if (!includeInternal && row.published_snapshot) {
+    return { ...JSON.parse(row.published_snapshot), status: row.status, statusLabel: RENTAL_STATUS_LABELS[row.status] };
+  }
+  if (includeInternal) {
+    value.managerMemo = row.manager_memo;
+    value.publishedRevision = row.published_snapshot ? JSON.parse(row.published_snapshot).revision : null;
+  }
   return value;
 }
 
@@ -298,7 +276,7 @@ rental.post('/api/liff/rental/quote-requests', async (c) => {
       friendId: identity.friend.id,
       ...validated.value,
     });
-    await writeRentalAuditLog(c.env.DB, {
+    if (!created.duplicate) await writeRentalAuditLog(c.env.DB, {
       actorType: 'line_user',
       actorId: identity.lineUserId,
       action: 'create',
@@ -306,16 +284,19 @@ rental.post('/api/liff/rental/quote-requests', async (c) => {
       entityId: created.requestId,
       metadata: { estimateCount: created.estimates.length },
     });
-    await setRentalStatusTag(c, identity.friend.id, '概算見積依頼済み');
+    if (!created.duplicate) await setRentalStatusTag(c, identity.friend.id, '概算見積依頼済み').catch(() => console.error('rental tag update failed'));
+    if (created.duplicate) return c.json({ success: true, data: { ...created, notificationSent: false } });
     let notificationSent = true;
     try {
-      await sendLineText(c, identity.friend, quoteReceiptMessage(), 'rental_quote_receipt');
+      await sendLineText(c, identity.friend, quoteReceiptMessage(validated.value.propertyName, validated.value.roomNumbers), 'rental_quote_receipt');
+      await c.env.DB.prepare('UPDATE rental_quote_requests SET receipt_sent_at = ? WHERE id = ?').bind(jstNow(), created.requestId).run();
     } catch (error) {
       notificationSent = false;
       console.error('rental quote receipt push failed:', errorMessage(error));
     }
     return c.json({ success: true, data: { ...created, notificationSent } }, 201);
   } catch (error) {
+    if (errorMessage(error) === 'rental_submission_conflict') return c.json({ success: false, error: '以前の内容で依頼を受付済みです。依頼状況をご確認ください。別の依頼は入力内容をクリアしてから作成してください。' }, 409);
     console.error('POST rental quote request:', error);
     return c.json({ success: false, error: '概算見積依頼を保存できませんでした' }, 500);
   }
@@ -348,6 +329,26 @@ rental.get('/api/liff/rental/estimates', async (c) => {
   return c.json({ success: true, data: { requests: [...requests.values()], estimateCount: rows.length } });
 });
 
+rental.get('/api/liff/rental/requests', async (c) => {
+  const identity = await liffIdentity(c); if (identity instanceof Response) return identity;
+  const rows = await c.env.DB.prepare(`SELECT r.id, r.property_name, r.created_at, r.status,
+    COUNT(e.id) AS rooms, SUM(CASE WHEN e.sent_at IS NOT NULL THEN 1 ELSE 0 END) AS presented
+    FROM rental_quote_requests r LEFT JOIN rental_estimates e ON e.request_id = r.id AND e.deleted_at IS NULL
+    WHERE r.friend_id = ? AND r.deleted_at IS NULL GROUP BY r.id ORDER BY r.created_at DESC`)
+    .bind(identity.friend.id).all<{ id: string; property_name: string; created_at: string; status: RentalStatus; rooms: number; presented: number }>();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ success: true, data: rows.results.map((row) => ({ id: row.id, propertyName: row.property_name,
+    createdAt: row.created_at, status: row.status, statusLabel: RENTAL_STATUS_LABELS[row.status], roomCount: row.rooms, presentedCount: row.presented })) });
+});
+rental.get('/api/liff/rental/estimates/:id/versions', async (c) => {
+  const identity = await liffIdentity(c); if (identity instanceof Response) return identity;
+  const owned = await getRentalEstimateOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
+  if (!owned?.sent_at) return c.json({ success: false, error: '見積が見つかりません' }, 404);
+  const versions = await c.env.DB.prepare('SELECT snapshot FROM rental_estimate_versions WHERE estimate_id = ? ORDER BY revision DESC')
+    .bind(owned.id).all<{ snapshot: string }>();
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ success: true, data: versions.results.map((row) => JSON.parse(row.snapshot)) });
+});
 rental.get('/api/liff/rental/requests/:id/estimates', async (c) => {
   const identity = await liffIdentity(c);
   if (identity instanceof Response) return identity;
@@ -379,17 +380,27 @@ rental.get('/api/liff/rental/estimates/:id/floor-plan', async (c) => {
   const identity = await liffIdentity(c);
   if (identity instanceof Response) return identity;
   const estimate = await getRentalEstimateOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
-  if (!estimate || !estimate.floor_plan_key) return c.json({ success: false, error: '図面が見つかりません' }, 404);
-  const object = await c.env.IMAGES.get(estimate.floor_plan_key);
+  if (!estimate?.sent_at) return c.json({ success: false, error: '図面が見つかりません' }, 404);
+  let fileKey = estimate.published_floor_plan_key;
+  let shown = estimate.published_snapshot ? JSON.parse(estimate.published_snapshot) : null;
+  const revision = c.req.query('revision');
+  if (revision) {
+    const version = await c.env.DB.prepare('SELECT floor_plan_key, snapshot FROM rental_estimate_versions WHERE estimate_id = ? AND revision = ?')
+      .bind(estimate.id, Number(revision)).first<{ floor_plan_key: string | null; snapshot: string }>();
+    if (!version) return c.json({ success: false, error: '図面が見つかりません' }, 404);
+    fileKey = version.floor_plan_key; shown = JSON.parse(version.snapshot);
+  }
+  if (!fileKey) return c.json({ success: false, error: '図面が見つかりません' }, 404);
+  const object = await c.env.IMAGES.get(fileKey);
   if (!object) return c.json({ success: false, error: '図面が見つかりません' }, 404);
   await writeRentalAuditLog(c.env.DB, {
     actorType: 'line_user', actorId: identity.lineUserId, action: 'view_file',
     entityType: 'estimate', entityId: estimate.id,
   });
   const headers = new Headers({
-    'Content-Type': estimate.floor_plan_mime || 'application/octet-stream',
+    'Content-Type': shown?.floorPlanMime || estimate.floor_plan_mime || 'application/octet-stream',
     'Cache-Control': 'private, no-store',
-    'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(estimate.floor_plan_name || 'floor-plan')}`,
+    'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(shown?.floorPlanName || 'floor-plan')}`,
     'X-Content-Type-Options': 'nosniff',
   });
   return new Response(object.body, { headers });
@@ -399,7 +410,7 @@ rental.get('/api/liff/rental/estimates/:id/application-preview', async (c) => {
   const identity = await liffIdentity(c);
   if (identity instanceof Response) return identity;
   const estimate = await getRentalEstimateOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
-  if (!estimate) return c.json({ success: false, error: '申込対象が見つかりません' }, 404);
+  if (!estimate?.sent_at) return c.json({ success: false, error: '申込対象が見つかりません' }, 404);
   if (!['quote_presented', 'application_requested', 'application_submitted'].includes(estimate.status)) {
     return c.json({ success: false, error: 'この見積は審査申込できません' }, 409);
   }
@@ -413,7 +424,10 @@ rental.get('/api/liff/rental/estimates/:id/application-preview', async (c) => {
       requestId: estimate.request_id,
       propertyName: estimate.property_name,
       propertyUrl: estimate.property_url,
-      roomNumber: estimate.room_number,
+      roomNumber: serializeEstimate(estimate).roomNumber,
+      revision: estimate.published_snapshot ? JSON.parse(estimate.published_snapshot).revision : estimate.revision,
+      estimate: serializeEstimate(estimate),
+      alreadyRequested: estimate.status === 'application_requested',
       existingApplication: existing ? { id: existing.id, status: existing.status } : null,
     },
   });
@@ -424,7 +438,7 @@ rental.post('/api/liff/rental/estimates/:id/application-request', async (c) => {
     const identity = await liffIdentity(c);
     if (identity instanceof Response) return identity;
     const estimate = await getRentalEstimateOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
-    if (!estimate) return c.json({ success: false, error: '申込対象が見つかりません' }, 404);
+    if (!estimate?.sent_at) return c.json({ success: false, error: '申込対象が見つかりません' }, 404);
 
     const existingApplication = await c.env.DB.prepare(
       `SELECT id FROM rental_applications WHERE estimate_id = ? AND deleted_at IS NULL`,
@@ -444,9 +458,12 @@ rental.post('/api/liff/rental/estimates/:id/application-request', async (c) => {
     if (!['quote_presented', 'application_requested'].includes(estimate.status)) {
       return c.json({ success: false, error: 'この見積では審査申込希望を受け付けできません' }, 409);
     }
+    const body = await c.req.json<{ expectedRevision?: number }>().catch(() => ({} as { expectedRevision?: number }));
+    const shownRevision = estimate.published_snapshot ? JSON.parse(estimate.published_snapshot).revision : estimate.revision;
+    if (estimate.status !== 'application_requested' && body.expectedRevision !== shownRevision) return c.json({ success: false, error: '見積が更新されています。内容を確認してから、もう一度お進みください。' }, 409);
 
     const noticeText = [
-      `【審査申込希望】${estimate.property_name} ${estimate.room_number}号室`,
+      `【審査申込希望】${estimate.property_name} ${serializeEstimate(estimate).roomNumber}（提示内容版 ${shownRevision}）`,
       `estimate_id: ${estimate.id}`,
       `request_id: ${estimate.request_id}`,
       'お客様がこの部屋で審査申込を希望しています。',
@@ -460,6 +477,9 @@ rental.post('/api/liff/rental/estimates/:id/application-request', async (c) => {
     ).bind(identity.friend.id, `%${estimate.id}%`).first<{ id: string }>();
 
     const now = jstNow();
+    await c.env.DB.prepare('INSERT OR IGNORE INTO rental_application_requests(estimate_id, friend_id, snapshot, requested_at) VALUES (?, ?, ?, ?)')
+      .bind(estimate.id, identity.friend.id, JSON.stringify(serializeEstimate(estimate)), now).run();
+    await c.env.DB.prepare('INSERT OR IGNORE INTO rental_customer_support(friend_id, enabled_at) VALUES (?, ?)').bind(identity.friend.id, now).run();
     if (estimate.status !== 'application_requested') {
       await c.env.DB.prepare(
         `UPDATE rental_estimates SET status = 'application_requested', updated_at = ? WHERE id = ?`,
@@ -605,6 +625,7 @@ rental.post('/api/liff/rental/estimates/:id/applications', async (c) => {
       normalized.petInfo, normalized.vehicleInfo, normalized.motorbikeInfo,
       normalized.bicycleParkingInfo, normalized.customerNote, now, now, now,
     ).run();
+    await c.env.DB.prepare('INSERT OR IGNORE INTO rental_customer_support(friend_id, enabled_at) VALUES (?, ?)').bind(identity.friend.id, now).run();
     await c.env.DB.prepare(
       `UPDATE rental_estimates SET status = 'application_submitted', updated_at = ? WHERE id = ?`,
     ).bind(now, estimate.id).run();
@@ -738,7 +759,13 @@ rental.get('/api/rental/requests', requireRole('owner', 'admin', 'staff'), async
     const estimates = await c.env.DB.prepare(
       `SELECT * FROM rental_estimates WHERE request_id = ? AND deleted_at IS NULL ORDER BY sort_order`,
     ).bind(request.id).all<RentalEstimate>();
-    items.push({ ...request, estimates: estimates.results.map((row) => serializeEstimate(row, true)) });
+    const accepted = await c.env.DB.prepare('SELECT estimate_id, snapshot FROM rental_application_requests WHERE friend_id = ?')
+      .bind(request.friend_id).all<{ estimate_id: string; snapshot: string }>();
+    const deliveries = await c.env.DB.prepare('SELECT status, revisions FROM rental_quote_deliveries WHERE request_id = ? ORDER BY created_at DESC')
+      .bind(request.id).all<{ status: string; revisions: string }>();
+    items.push({ ...request, estimates: estimates.results.map((row) => ({ ...serializeEstimate(row, true),
+      notificationStatus: deliveries.results.find((delivery) => JSON.parse(delivery.revisions).some((r: { id: string; revision: number }) => r.id === row.id && r.revision === (row.published_snapshot ? JSON.parse(row.published_snapshot).revision : null)))?.status ?? null,
+      requestedQuote: accepted.results.find((a) => a.estimate_id === row.id)?.snapshot ? JSON.parse(accepted.results.find((a) => a.estimate_id === row.id)!.snapshot) : null })) });
   }
   return c.json({ success: true, data: items });
 });
@@ -766,6 +793,7 @@ rental.patch('/api/rental/estimates/:id', requireRole('owner', 'admin', 'staff')
   if (!estimate) return c.json({ success: false, error: '見積が見つかりません' }, 404);
   const body: Record<string, unknown> = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
   const camelToColumn: Record<string, string> = {
+    monthlyOtherCost: 'monthly_other_cost',
     rent: 'rent', managementFee: 'management_fee', deposit: 'deposit', keyMoney: 'key_money',
     advanceRent: 'advance_rent', proratedRent: 'prorated_rent', fireInsurance: 'fire_insurance',
     guaranteeCompanyFee: 'guarantee_company_fee', keyExchangeFee: 'key_exchange_fee',
@@ -775,6 +803,14 @@ rental.patch('/api/rental/estimates/:id', requireRole('owner', 'admin', 'staff')
   const sets: string[] = [];
   const binds: unknown[] = [];
   const totals: Record<string, unknown> = {};
+  if ('roomNumber' in body) {
+    const room = normalizeOptionalText(typeof body.roomNumber === 'string' ? body.roomNumber.normalize('NFKC').replace(/\s*号室$/, '').trim() : null, 50);
+    if (!room) return c.json({ success: false, error: '部屋番号を入力してください' }, 400);
+    const siblings = await c.env.DB.prepare('SELECT room_number FROM rental_estimates WHERE request_id = ? AND id != ? AND deleted_at IS NULL')
+      .bind(estimate.request_id, estimate.id).all<{ room_number: string }>();
+    if (siblings.results.some((row) => row.room_number.normalize('NFKC').replace(/\s*号室$/, '').trim() === room)) return c.json({ success: false, error: '同じ依頼に部屋番号が重複しています' }, 400);
+    sets.push('room_number = ?'); binds.push(room);
+  }
   for (const [camel, column] of Object.entries(camelToColumn)) {
     if (!(camel in body)) continue;
     const value = body[camel] === '' || body[camel] == null ? null : nonNegativeInteger(body[camel]);
@@ -783,7 +819,9 @@ rental.patch('/api/rental/estimates/:id', requireRole('owner', 'admin', 'staff')
   }
   const mergedTotals = Object.fromEntries(ESTIMATE_MONEY_FIELDS.map((field) => [field, field in totals ? totals[field] : estimate[field]]));
   if (Object.keys(totals).length > 0) {
-    sets.push('payment_total = ?'); binds.push(calculatePaymentTotal(mergedTotals));
+    const price = rentalPricing(estimatePriceValues(mergedTotals));
+    if (price.invalidDiscount || price.invalidCashback) return c.json({ success: false, error: '割引・キャッシュバックが対象の費用を超えています' }, 400);
+    sets.push('payment_total = ?', 'pricing_version = 1'); binds.push(calculatePaymentTotal(mergedTotals));
   }
   if ('managerMemo' in body) { sets.push('manager_memo = ?'); binds.push(normalizeOptionalText(body.managerMemo, 5000)); }
   if ('customerNotes' in body) { sets.push('customer_notes = ?'); binds.push(normalizeOptionalText(body.customerNotes, 3000)); }
@@ -792,8 +830,10 @@ rental.patch('/api/rental/estimates/:id', requireRole('owner', 'admin', 'staff')
     sets.push('status = ?'); binds.push(body.status);
   }
   if (sets.length === 0) return c.json({ success: false, error: '更新項目がありません' }, 400);
-  sets.push('updated_at = ?'); binds.push(jstNow(), estimate.id);
-  await c.env.DB.prepare(`UPDATE rental_estimates SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  if (!Number.isSafeInteger(body.expectedRevision)) return c.json({ success: false, error: '再読み込みして保存してください' }, 409);
+  sets.push('updated_at = ?', 'revision = revision + 1'); binds.push(jstNow(), estimate.id, body.expectedRevision);
+  const changed = await c.env.DB.prepare(`UPDATE rental_estimates SET ${sets.join(', ')} WHERE id = ? AND revision = ? AND send_lock IS NULL`).bind(...binds).run();
+  if (changed.meta.changes !== 1) return c.json({ success: false, error: '別の編集・送信があります。再読み込みしてください' }, 409);
   const requestStatus = await syncRequestStatus(c.env.DB, estimate.request_id);
   const request = await c.env.DB.prepare(`SELECT friend_id FROM rental_quote_requests WHERE id = ?`).bind(estimate.request_id).first<{ friend_id: string }>();
   if (request) await setRentalStatusTag(c, request.friend_id, RENTAL_STATUS_LABELS[requestStatus]);
@@ -809,17 +849,20 @@ rental.patch('/api/rental/estimates/:id', requireRole('owner', 'admin', 'staff')
 rental.post('/api/rental/estimates/:id/floor-plan', requireRole('owner', 'admin', 'staff'), async (c) => {
   const estimate = await c.env.DB.prepare(`SELECT * FROM rental_estimates WHERE id = ? AND deleted_at IS NULL`).bind(c.req.param('id')).first<RentalEstimate>();
   if (!estimate) return c.json({ success: false, error: '見積が見つかりません' }, 404);
-  const decoded = decodeRentalFile(await c.req.json().catch(() => ({})), 'floor-plan');
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+  if (body.expectedRevision !== estimate.revision) return c.json({ success: false, error: '再読み込みして図面を添付してください' }, 409);
+  const decoded = decodeRentalFile(body, 'floor-plan');
   if (!decoded.ok) return c.json({ success: false, error: decoded.error }, 400);
   const key = `rental/floor-plans/${estimate.id}/${crypto.randomUUID()}.${decoded.extension}`;
   await c.env.IMAGES.put(key, decoded.data, {
     httpMetadata: { contentType: decoded.mimeType },
     customMetadata: { originalFilename: decoded.filename, visibility: 'private' },
   });
-  await c.env.DB.prepare(
-    `UPDATE rental_estimates SET floor_plan_key = ?, floor_plan_name = ?, floor_plan_mime = ?, floor_plan_size = ?, updated_at = ? WHERE id = ?`,
-  ).bind(key, decoded.filename, decoded.mimeType, decoded.data.byteLength, jstNow(), estimate.id).run();
-  if (estimate.floor_plan_key) await c.env.IMAGES.delete(estimate.floor_plan_key);
+  const changed = await c.env.DB.prepare(
+    `UPDATE rental_estimates SET floor_plan_key = ?, floor_plan_name = ?, floor_plan_mime = ?, floor_plan_size = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND send_lock IS NULL`,
+  ).bind(key, decoded.filename, decoded.mimeType, decoded.data.byteLength, jstNow(), estimate.id, body.expectedRevision).run();
+  if (changed.meta.changes !== 1) { await c.env.IMAGES.delete(key); return c.json({ success: false, error: '別の編集・送信があります。再読み込みしてください' }, 409); }
+  // Previous files remain available to immutable presented versions.
   await writeRentalAuditLog(c.env.DB, {
     actorType: 'staff', actorId: c.get('staff').id, actorName: c.get('staff').name,
     action: 'upload_file', entityType: 'estimate', entityId: estimate.id,
@@ -845,26 +888,31 @@ rental.get('/api/rental/estimates/:id/floor-plan', requireRole('owner', 'admin',
   } });
 });
 
+async function sendRentalRequest(c: any, requestId: string, revisions: Array<{ id: string; revision: number }>) {
+  if (!revisions.length || revisions.length > 5 || new Set(revisions.map((r) => r.id)).size !== revisions.length || revisions.some((r) => typeof r.id !== 'string' || !Number.isSafeInteger(r.revision))) return c.json({ success: false, error: '送信対象を確認してください' }, 400);
+  try {
+    const result = await publishRentalQuotes(c, { requestId, revisions,
+      snapshot: (row) => { const { managerMemo, publishedRevision, ...customer } = serializeEstimate(row, true); return customer; },
+      listUrl: (friend) => liffDeepLink(c, '/rental/requests/' + requestId, friend),
+    });
+    const status = await syncRequestStatus(c.env.DB, requestId);
+    const request = await c.env.DB.prepare('SELECT friend_id FROM rental_quote_requests WHERE id = ?').bind(requestId).first();
+    if (request) await setRentalStatusTag(c, request.friend_id, RENTAL_STATUS_LABELS[status]).catch(() => console.error('rental tag update failed'));
+    await writeRentalAuditLog(c.env.DB, { actorType: 'staff', actorId: c.get('staff').id, actorName: c.get('staff').name,
+      action: 'send_quote', entityType: 'quote_request', entityId: requestId, metadata: { revisions, notificationSent: result.notificationSent } });
+    return c.json({ success: true, data: result });
+  } catch (error) { return c.json({ success: false, error: errorMessage(error) }, 409); }
+}
 rental.post('/api/rental/estimates/:id/send', requireRole('owner', 'admin', 'staff'), async (c) => {
-  const estimate = await c.env.DB.prepare(
-    `SELECT e.*, r.friend_id FROM rental_estimates e JOIN rental_quote_requests r ON r.id = e.request_id
-     WHERE e.id = ? AND e.deleted_at IS NULL AND r.deleted_at IS NULL`,
-  ).bind(c.req.param('id')).first<RentalEstimate & { friend_id: string }>();
+  const estimate = await c.env.DB.prepare('SELECT request_id FROM rental_estimates WHERE id = ? AND deleted_at IS NULL')
+    .bind(c.req.param('id')).first<{ request_id: string }>();
   if (!estimate) return c.json({ success: false, error: '見積が見つかりません' }, 404);
-  if (estimate.payment_total == null) return c.json({ success: false, error: '見積金額を入力してください' }, 409);
-  const friend = await getFriendById(c.env.DB, estimate.friend_id);
-  if (!friend) return c.json({ success: false, error: 'LINE友だちが見つかりません' }, 404);
-  const url = await liffDeepLink(c, `/rental/requests/${estimate.request_id}`, friend);
-  await sendQuoteReadyFlex(c, friend, url);
-  const now = jstNow();
-  await c.env.DB.prepare(`UPDATE rental_estimates SET status = 'quote_presented', sent_at = ?, updated_at = ? WHERE id = ?`).bind(now, now, estimate.id).run();
-  await syncRequestStatus(c.env.DB, estimate.request_id);
-  await setRentalStatusTag(c, friend.id, '見積提示済み');
-  await writeRentalAuditLog(c.env.DB, {
-    actorType: 'staff', actorId: c.get('staff').id, actorName: c.get('staff').name,
-    action: 'send_quote', entityType: 'estimate', entityId: estimate.id,
-  });
-  return c.json({ success: true, data: { sentAt: now } });
+  const body = await c.req.json<{ expectedRevision?: number }>().catch(() => ({} as { expectedRevision?: number }));
+  return sendRentalRequest(c, estimate.request_id, [{ id: c.req.param('id')!, revision: body.expectedRevision as number }]);
+});
+rental.post('/api/rental/requests/:id/send', requireRole('owner', 'admin', 'staff'), async (c) => {
+  const body = await c.req.json<{ revisions?: Array<{ id: string; revision: number }> }>().catch(() => ({} as { revisions?: Array<{ id: string; revision: number }> }));
+  return sendRentalRequest(c, c.req.param('id')!, Array.isArray(body.revisions) ? body.revisions : []);
 });
 
 function applicationSelect(): string {

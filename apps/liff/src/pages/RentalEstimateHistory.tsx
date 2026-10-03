@@ -5,6 +5,7 @@ import { rentalApi } from '../lib/rental-api.js';
 
 export default function RentalEstimateHistory() {
   const [data, setData] = useState<Awaited<ReturnType<typeof rentalApi.history>> | null>(null);
+  const [requests, setRequests] = useState<Awaited<ReturnType<typeof rentalApi.requests>>>([]);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
 
@@ -12,6 +13,7 @@ export default function RentalEstimateHistory() {
     let active = true;
     setError('');
     setData(null);
+    rentalApi.requests().then((value) => { if (active) setRequests(value); }).catch(() => { if (active) setError('依頼状況を読み込めませんでした'); });
     rentalApi.history()
       .then((value) => { if (active) setData(value); })
       .catch((err) => { if (active) setError(err instanceof Error ? err.message : '見積を読み込めませんでした'); });
@@ -23,6 +25,7 @@ export default function RentalEstimateHistory() {
       <p className="px-1 text-sm leading-6 text-gray-600">
         あなたに提示した概算見積を、新しいご案内から順に表示しています。
       </p>
+      {requests.filter((request) => request.presentedCount < request.roomCount).map((request) => <section key={request.id} className={cardClass}><h2 className="font-bold">{request.propertyName}</h2><p className="mt-2 text-sm text-gray-600">{request.statusLabel} ・ {request.roomCount}部屋の依頼 / {request.presentedCount}部屋を提示済み</p><p className="mt-2 text-xs text-gray-500">受付日：{request.createdAt.slice(0, 10)}。{['cancelled', 'out_of_scope'].includes(request.status) ? 'この依頼の見積案内は終了しています。' : '未提示の部屋は確認中、または案内対象外です。準備できた見積はLINEでご案内します。'}</p>{request.presentedCount > 0 && <Link className="mt-3 block text-sm text-[#049b43] underline" to={'/rental/requests/' + request.id}>提示済みの部屋を見る</Link>}</section>)}
       {error && (
         <section className={cardClass} role="alert">
           <p className="text-sm text-red-700">{error}</p>
@@ -56,9 +59,9 @@ export default function RentalEstimateHistory() {
                       <span className="rounded-full bg-[#06C755]/10 px-2.5 py-1 text-xs text-[#049b43]">{estimate.statusLabel}</span>
                     </div>
                     <div className="mt-2 flex items-baseline justify-between gap-3">
-                      <span className="text-xs text-gray-500">支払総額目安</span>
+                      <span className="text-xs text-gray-500">{estimate.pricingVersion === 1 ? estimate.upfrontTotal == null ? '確認済み初期費用の小計' : '最初に支払う初期費用' : '旧形式の総額目安'}</span>
                       <span className="text-lg font-bold text-[#049b43]">
-                        {typeof estimate.paymentTotal === 'number' ? `${estimate.paymentTotal.toLocaleString('ja-JP')}円` : '確認中'}
+                        {typeof (estimate.pricingVersion === 1 ? estimate.upfrontTotal ?? estimate.upfrontSubtotal : estimate.paymentTotal) === 'number' ? `${Number(estimate.pricingVersion === 1 ? estimate.upfrontTotal ?? estimate.upfrontSubtotal : estimate.paymentTotal).toLocaleString('ja-JP')}円` : '確認中'}
                       </span>
                     </div>
                     {estimate.sentAt && <p className="mt-1 text-xs text-gray-500">提示日：{estimate.sentAt.slice(0, 10).replaceAll('-', '/')}</p>}

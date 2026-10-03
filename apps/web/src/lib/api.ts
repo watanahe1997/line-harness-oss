@@ -188,7 +188,7 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 
 /** Fetch an authenticated non-JSON response (CSV, private PDF/image). */
 export async function fetchApiBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${API_URL}${path}`, { credentials: 'include' })
+  const res = await fetch(`${apiUrl()}${path}`, { credentials: 'include' })
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.blob()
 }

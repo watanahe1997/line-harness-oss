@@ -68,6 +68,8 @@ describe('immutable historical mileage compatibility', () => {
     for (const file of readdirSync(join(ROOT, 'migrations')).filter((name) => name.endsWith('.sql')).sort()) {
       execSafe(sqlite, readFileSync(join(ROOT, 'migrations', file), 'utf8'));
     }
+    // Explicit opt-in keeps mileage compatibility tests independent of rental defaults.
+    sqlite.exec("UPDATE mileage_programs SET status = 'active' WHERE id = 'default'; UPDATE mileage_rules SET is_active = 1 WHERE program_id = 'default';");
     sqlite.exec(`INSERT INTO users(id, display_name) VALUES ('user-1', 'One'), ('user-2', 'Two');
       INSERT INTO line_accounts(id, channel_id, name, channel_access_token, channel_secret)
         VALUES ('account-1', 'channel-1', 'One', 'private-token', 'private-secret'),

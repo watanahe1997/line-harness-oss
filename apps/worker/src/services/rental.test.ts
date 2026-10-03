@@ -6,13 +6,13 @@ import {
 } from './rental.js';
 
 describe('rental service', () => {
-  it('calculates initial payment after discounts and cashback', () => {
-    expect(calculatePaymentTotal({ rent: 80_000, management_fee: 5_000, brokerage_fee: 88_000, brokerage_discount: 20_000, cashback: 5_000 })).toBe(148_000);
+  it('calculates initial payment without adding monthly rent twice or deducting later cashback', () => {
+    expect(calculatePaymentTotal({ rent: 80_000, management_fee: 5_000, brokerage_fee: 88_000, brokerage_discount: 20_000, cashback: 5_000 })).toBe(68_000);
   });
 
   it('validates one to five unique room numbers', () => {
     const result = validateQuoteRequestBody({
-      propertyName: 'テストマンション',
+      propertyName: 'テストマンション', propertyAddress: '大阪市北区',
       roomNumbers: ['101', '101', '202'],
       desiredMoveInDate: '2026-07-01',
       nickname: 'れい',

@@ -1,3 +1,4 @@
+import { rentalPricing } from '@line-crm/shared';
 import {
   RENTAL_APPLICATION_STATUSES,
   RENTAL_STATUSES,
@@ -43,6 +44,7 @@ export const RENTAL_SAFE_LINE_MESSAGES = {
 export const ESTIMATE_MONEY_FIELDS = [
   'rent',
   'management_fee',
+  'monthly_other_cost',
   'deposit',
   'key_money',
   'advance_rent',
@@ -76,34 +78,24 @@ export function normalizeOptionalText(value: unknown, maxLength = 2000): string 
 
 export function nonNegativeInteger(value: unknown): number | null {
   if (value === '' || value === null || value === undefined) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
   const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) return null;
+  if (!Number.isSafeInteger(number) || number < 0 || number > 1_000_000_000) return null;
   return number;
 }
 
 export function calculatePaymentTotal(values: Partial<Record<EstimateMoneyField, unknown>>): number {
-  const costFields: EstimateMoneyField[] = [
-    'rent',
-    'management_fee',
-    'deposit',
-    'key_money',
-    'advance_rent',
-    'prorated_rent',
-    'fire_insurance',
-    'guarantee_company_fee',
-    'key_exchange_fee',
-    'cleaning_fee',
-    'other_initial_cost',
-    'brokerage_fee',
-  ];
-  const cost = costFields.reduce((sum, field) => sum + (nonNegativeInteger(values[field]) ?? 0), 0);
-  const discounts = (nonNegativeInteger(values.brokerage_discount) ?? 0)
-    + (nonNegativeInteger(values.cashback) ?? 0);
-  return Math.max(0, cost - discounts);
+  return rentalPricing(estimatePriceValues(values)).upfrontSubtotal;
+}
+export function estimatePriceValues(values: Partial<Record<EstimateMoneyField, unknown>>) {
+  return Object.fromEntries(ESTIMATE_MONEY_FIELDS.map((key) => [key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()), nonNegativeInteger(values[key])]));
 }
 
 export interface QuoteRequestBody {
   propertyName?: unknown;
+  propertyAddress?: unknown;
+  conditionDetails?: unknown;
+  submissionKey?: unknown;
   propertyUrl?: unknown;
   roomNumbers?: unknown;
   desiredMoveInDate?: unknown;
@@ -117,6 +109,9 @@ export interface QuoteRequestBody {
 export function validateQuoteRequestBody(body: QuoteRequestBody):
   | { ok: true; value: {
       propertyName: string;
+      propertyAddress: string | null;
+      conditionDetails: string | null;
+      submissionKey: string | null;
       propertyUrl: string | null;
       roomNumbers: string[];
       desiredMoveInDate: string;
@@ -129,14 +124,14 @@ export function validateQuoteRequestBody(body: QuoteRequestBody):
   | { ok: false; error: string } {
   let propertyName = normalizeOptionalText(body.propertyName, 300);
   const nickname = normalizeOptionalText(body.nickname, 100);
-  const desiredMoveInDate = normalizeOptionalText(body.desiredMoveInDate, 10);
+  const desiredMoveInDate = normalizeOptionalText(body.desiredMoveInDate, 30);
   if (!nickname) return { ok: false, error: 'ニックネームは必須です' };
-  if (!desiredMoveInDate || !/^\d{4}-\d{2}-\d{2}$/.test(desiredMoveInDate)) {
-    return { ok: false, error: '入居希望日は YYYY-MM-DD 形式で入力してください' };
+  if (!desiredMoveInDate || !(/^(\d{4}-\d{2}-\d{2}|\d{4}-\d{2}頃|未定)$/.test(desiredMoveInDate))) {
+    return { ok: false, error: '入居希望日、希望月、または未定を指定してください' };
   }
 
   const rooms = Array.isArray(body.roomNumbers)
-    ? body.roomNumbers.map((value) => normalizeOptionalText(value, 50)).filter((value): value is string => Boolean(value))
+    ? body.roomNumbers.map((value) => normalizeOptionalText(typeof value === 'string' ? value.normalize('NFKC').replace(/\s*号室$/, '').trim() : value, 50)).filter((value): value is string => Boolean(value))
     : [];
   const uniqueRooms = [...new Set(rooms)];
   if (uniqueRooms.length < 1 || uniqueRooms.length > 5) {
@@ -156,6 +151,15 @@ export function validateQuoteRequestBody(body: QuoteRequestBody):
   if (!propertyName && !propertyUrl) return { ok: false, error: '物件名または物件URLは必須です' };
   propertyName ??= propertyUrl!;
 
+  if (desiredMoveInDate !== '未定') {
+    const date = desiredMoveInDate.replace('頃', '-01');
+    if (Number.isNaN(new Date(date + 'T00:00:00Z').getTime()) || new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date) return { ok: false, error: '入居希望日を確認してください' };
+  }
+  const propertyAddress = normalizeOptionalText(body.propertyAddress, 300);
+  if (!propertyUrl && !propertyAddress) return { ok: false, error: '物件URLがない場合は所在地（市区町村・町名）も入力してください' };
+  const submissionKey = normalizeOptionalText(body.submissionKey, 100);
+  if (submissionKey && !/^[a-zA-Z0-9-]{16,100}$/.test(submissionKey)) return { ok: false, error: '受付キーが不正です' };
+  const conditionDetails = normalizeOptionalText(body.conditionDetails, 1500);
   const flags = [body.hasPets, body.needsParking, body.hasMotorbike, body.needsBicycleParking];
   if (flags.some((value) => typeof value !== 'boolean')) {
     return { ok: false, error: '設備条件をすべて選択してください' };
@@ -164,7 +168,7 @@ export function validateQuoteRequestBody(body: QuoteRequestBody):
   return {
     ok: true,
     value: {
-      propertyName,
+      propertyName, propertyAddress, conditionDetails, submissionKey,
       propertyUrl,
       roomNumbers: uniqueRooms,
       desiredMoveInDate,
@@ -238,8 +242,8 @@ export function csvCell(value: unknown): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-export function quoteReceiptMessage(): string {
-  return '概算見積依頼を受け付けました。\n内容を確認後、LINEで概算見積をご案内します。';
+export function quoteReceiptMessage(propertyName = '', rooms: string[] = []): string {
+  return ['概算見積依頼を受け付けました。', propertyName, rooms.length ? '対象：' + rooms.join('・') : '', '内容を確認後、LINEで概算見積をご案内します。', '依頼状況と提示済みの見積は、トーク下部の「概算見積一覧」から確認できます。'].filter(Boolean).join('\n');
 }
 
 export function quoteReadyMessage(listUrl: string): string {
@@ -247,7 +251,7 @@ export function quoteReadyMessage(listUrl: string): string {
     '概算見積ができました。',
     '',
     '見積内容と図面をあわせてご確認ください。',
-    '審査申込をご希望の場合は、該当する見積の「審査申込へ進む」ボタンからお進みください。',
+    '審査申込をご希望の場合は、該当する見積の「この部屋で審査申込を希望する」ボタンからお進みください。',
     '',
     '※概算見積のため、正式な金額は審査通過後の正式見積で確定します。',
     listUrl,

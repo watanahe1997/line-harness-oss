@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { rentalPricing, RENTAL_MONEY_LABELS, RENTAL_CASHBACK_NOTE, type RentalMoneyKey } from '@line-crm/shared'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchApi, fetchApiBlob } from '@/lib/api'
 import RentalRichMenu from '@/components/rental-rich-menu'
 
@@ -12,6 +13,9 @@ type Estimate = {
   advanceRent: number | null; proratedRent: number | null; fireInsurance: number | null
   guaranteeCompanyFee: number | null; keyExchangeFee: number | null; cleaningFee: number | null
   otherInitialCost: number | null; brokerageFee: number | null; brokerageDiscount: number | null
+  requestedQuote?: Estimate | null;
+  notificationStatus?: 'pending' | 'failed' | 'sent' | null;
+  revision: number; pricingVersion: number; publishedRevision: number | null; monthlyOtherCost: number | null;
   cashback: number | null; paymentTotal: number | null; managerMemo: string | null
   customerNotes: string | null; hasFloorPlan: boolean; floorPlanName: string | null; sentAt: string | null
 }
@@ -19,6 +23,7 @@ type Estimate = {
 type QuoteRequest = {
   id: string; friend_id: string; line_user_id: string; display_name: string | null
   property_name: string; property_url: string | null; desired_move_in_date: string; nickname: string
+  property_address: string | null; condition_details: string | null;
   has_pets: number; needs_parking: number; has_motorbike: number; needs_bicycle_parking: number
   status: string; created_at: string; estimates: Estimate[]
 }
@@ -44,13 +49,8 @@ const applicationStatusOptions = [
   ['contract_in_progress', '契約手続き中'], ['contracted', '成約'], ['cancelled', 'キャンセル'],
 ]
 
-const moneyFields: Array<[keyof Estimate, string]> = [
-  ['rent', '家賃'], ['managementFee', '共益費・管理費'], ['deposit', '敷金'], ['keyMoney', '礼金'],
-  ['advanceRent', '前家賃'], ['proratedRent', '日割り家賃'], ['fireInsurance', '火災保険'],
-  ['guaranteeCompanyFee', '保証会社費用'], ['keyExchangeFee', '鍵交換費'], ['cleaningFee', 'クリーニング費'],
-  ['otherInitialCost', 'その他初期費用'], ['brokerageFee', '仲介手数料'],
-  ['brokerageDiscount', '仲介手数料割引'], ['cashback', 'キャッシュバック'],
-]
+const moneyFields = Object.entries(RENTAL_MONEY_LABELS) as Array<[RentalMoneyKey, string]>
+const yen = (value: number | null) => value == null ? '確認中' : value.toLocaleString('ja-JP') + '円'
 
 function Badge({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex rounded-full bg-[#06C755]/10 px-2.5 py-1 text-xs font-semibold text-[#049b43]">{children}</span>
@@ -71,75 +71,94 @@ function openBlob(blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
-function EstimateEditor({ estimate, onChanged }: { estimate: Estimate; onChanged: () => void }) {
-  const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries([
-    ...moneyFields.map(([key]) => [key, estimate[key] == null ? '' : String(estimate[key])]),
-    ['status', estimate.status], ['managerMemo', estimate.managerMemo ?? ''], ['customerNotes', estimate.customerNotes ?? ''],
-  ]))
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
-
-  async function save() {
+function QuotePreview({ estimate }: { estimate: Estimate }) {
+  const price = rentalPricing(estimate)
+  const legacy = estimate.pricingVersion !== 1
+  return <div className="rounded-xl border p-4"><h3 className="font-bold">{estimate.roomNumber}号室</h3>
+    <dl className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><dt>月額費用目安</dt><dd>{yen(price.monthlyTotal)}</dd></div><div className="flex justify-between"><dt>{legacy ? '旧形式の総額目安' : price.upfrontTotal == null ? '確認済み初期費用の小計' : '最初に支払う初期費用'}</dt><dd className="font-bold">{yen(legacy ? estimate.paymentTotal : price.upfrontTotal ?? price.upfrontSubtotal)}</dd></div>{!legacy && <div className="flex justify-between"><dt>キャッシュバック後の実質負担</dt><dd>{yen(price.effectiveTotal)}</dd></div>}</dl>
+    {!legacy && !!price.unknownInitialFields.length && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs">確認中：{price.unknownInitialFields.map((key) => RENTAL_MONEY_LABELS[key]).join('、')}。小計には含みません。</p>}
+    <p className="mt-3 text-xs leading-5">{legacy ? '以前の計算形式で提示した見積です。月額費用・前家賃・特典の扱いを含め、支払額は担当者にご確認ください。' : RENTAL_CASHBACK_NOTE}</p>
+    <details className="mt-3"><summary className="text-sm">内訳を見る</summary><dl className="mt-2 space-y-1 text-xs">{moneyFields.map(([key, label]) => <div key={key} className="flex justify-between"><dt>{label}</dt><dd>{yen(estimate[key])}</dd></div>)}</dl></details>
+    {estimate.customerNotes && <p className="mt-3 whitespace-pre-wrap text-sm">{estimate.customerNotes}</p>}
+    <p className="mt-3 text-xs text-gray-500">図面：{estimate.floorPlanName || '添付なし'}。概算のため、正式な費用・空室状況は確認が必要です。</p>
+  </div>
+}
+function estimateDraft(estimate: Estimate): Record<string, string> {
+  return Object.fromEntries([...moneyFields.map(([key]) => [key, estimate[key] == null ? '' : String(estimate[key])]),
+    ['roomNumber', estimate.roomNumber], ['status', estimate.status], ['managerMemo', estimate.managerMemo ?? ''], ['customerNotes', estimate.customerNotes ?? '']])
+}
+function EstimateEditor({ estimate, onChanged, onDirty }: { estimate: Estimate; onChanged: () => void; onDirty: (id: string, dirty: boolean) => void }) {
+  const [baseline, setBaseline] = useState(estimate)
+  const [draft, setDraft] = useState<Record<string, string>>(() => estimateDraft(estimate))
+  const [busy, setBusy] = useState(''), [error, setError] = useState('')
+  const [preview, setPreview] = useState<Estimate | null>(null)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(estimateDraft(baseline))
+  useEffect(() => { if (!dirty && (estimate.revision > baseline.revision || (estimate.revision === baseline.revision && JSON.stringify(estimateDraft(estimate)) !== JSON.stringify(estimateDraft(baseline))))) { setBaseline(estimate); setDraft(estimateDraft(estimate)) } }, [estimate, baseline, dirty])
+  const price = rentalPricing(Object.fromEntries(moneyFields.map(([key]) => [key, draft[key] === '' ? null : Number(draft[key])])))
+  useEffect(() => { onDirty(estimate.id, dirty); return () => onDirty(estimate.id, false) }, [dirty, estimate.id, onDirty])
+  useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault() }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn) }, [dirty])
+  async function save(showPreview = false) {
+    if (!dirty) { if (showPreview) { setError(''); setPreview(baseline) } return }
     setBusy('save'); setError('')
     try {
-      await fetchApi(`/api/rental/estimates/${estimate.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          ...Object.fromEntries(moneyFields.map(([key]) => [key, draft[String(key)]])),
-          status: draft.status, managerMemo: draft.managerMemo, customerNotes: draft.customerNotes,
-        }),
-      })
-      onChanged()
-    } catch { setError('保存できませんでした') } finally { setBusy('') }
+      const response = await fetchApi<ApiResponse<Estimate>>('/api/rental/estimates/' + estimate.id, { method: 'PATCH', body: JSON.stringify({ ...draft, expectedRevision: baseline.revision }) })
+      setBaseline(response.data); setDraft(estimateDraft(response.data))
+      if (showPreview) setPreview(response.data); else onChanged()
+    } catch { setError('保存できませんでした。別の編集・送信がないか再読み込みして確認してください。') } finally { setBusy('') }
   }
-
   async function upload(file: File) {
+    if (dirty) { setError('入力中の内容を先に保存してから図面を添付してください'); return }
     setBusy('upload'); setError('')
-    try {
-      await fetchApi(`/api/rental/estimates/${estimate.id}/floor-plan`, {
-        method: 'POST', body: JSON.stringify({ data: await toDataUrl(file), mimeType: file.type, filename: file.name }),
-      })
-      onChanged()
-    } catch { setError('図面をアップロードできませんでした') } finally { setBusy('') }
+    try { await fetchApi('/api/rental/estimates/' + estimate.id + '/floor-plan', { method: 'POST', body: JSON.stringify({ data: await toDataUrl(file), mimeType: file.type, filename: file.name, expectedRevision: baseline.revision }) }); onChanged() }
+    catch { setError('図面を添付できませんでした。ファイルと保存状態を確認してください。') } finally { setBusy('') }
   }
-
   async function send() {
-    if (!window.confirm(`${estimate.roomNumber}号室の概算見積をLINEで送信しますか？`)) return
+    if (!preview) return
     setBusy('send'); setError('')
-    try { await fetchApi(`/api/rental/estimates/${estimate.id}/send`, { method: 'POST' }); onChanged() }
-    catch { setError('送信できませんでした。見積金額とLINE設定を確認してください。') } finally { setBusy('') }
+    try {
+      const response = await fetchApi<ApiResponse<{ notificationSent: boolean }>>('/api/rental/estimates/' + estimate.id + '/send', { method: 'POST', body: JSON.stringify({ expectedRevision: preview.revision }) })
+      if (!response.data.notificationSent) { setError('見積は公開済みですがLINE通知が未完了です。この画面から再試行してください。'); return }
+      setPreview(null); onChanged()
+    } catch { setError('送信できませんでした。編集の競合・月間配信上限・LINE設定を確認してください。') } finally { setBusy('') }
   }
-
   return <div className="rounded-xl border border-gray-200 p-4">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{estimate.roomNumber}号室</h3><Badge>{estimate.statusLabel}</Badge></div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {moneyFields.map(([key, label]) => <label key={String(key)} className="text-xs text-gray-500">{label}<input type="number" min="0" value={draft[String(key)]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900" /></label>)}
-    </div>
-    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-      <label className="text-xs text-gray-500">ステータス<select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900">{estimateStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <div className="rounded-lg bg-gray-50 p-3 text-sm"><span className="text-gray-500">支払総額目安</span><strong className="ml-2 text-[#06C755]">{estimate.paymentTotal?.toLocaleString('ja-JP') ?? '—'}円</strong></div>
-    </div>
-    <label className="mt-3 block text-xs text-gray-500">顧客向け注意書き<textarea value={draft.customerNotes} onChange={(e) => setDraft({ ...draft, customerNotes: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900" rows={2} /></label>
-    <label className="mt-3 block text-xs text-gray-500">管理者メモ（顧客には非表示）<textarea value={draft.managerMemo} onChange={(e) => setDraft({ ...draft, managerMemo: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900" rows={2} /></label>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{estimate.roomNumber}号室</h3><Badge>{dirty ? '未保存の変更あり' : estimate.statusLabel}</Badge></div>
+    {estimate.requestedQuote && <details className="mt-3 rounded-lg bg-green-50 p-3"><summary className="text-sm font-semibold">お客さんが申込を希望した時点の見積を見る</summary><QuotePreview estimate={estimate.requestedQuote} /></details>}
+    {estimate.sentAt && <p className="mt-2 text-xs text-gray-500">提示済み。編集を保存しても、お客さんには再送まで以前の提示内容を表示します。</p>}
+    {estimate.notificationStatus && estimate.notificationStatus !== 'sent' && <p role="alert" className="mt-2 rounded-lg bg-amber-50 p-3 text-sm">見積は公開済みですが、LINE通知が未完了です。内容を変えずに送信プレビューから再試行できます。</p>}
+    <fieldset disabled={Boolean(busy) || Boolean(preview)}>
+      <label className="mt-3 block text-xs">部屋番号（未確認の場合は判明後に更新）<input value={draft.roomNumber} maxLength={50} onChange={(e) => setDraft({ ...draft, roomNumber: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" /></label>
+      <p className="mt-4 text-xs text-gray-500">空欄＝確認中、0＝費用なし。前家賃・日割り家賃には対象期間の共益費を含めてください。</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{moneyFields.map(([key, label]) => <label key={key} className="text-xs text-gray-500">{label}<input type="number" min="0" step="1" placeholder="確認中" value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900" /></label>)}</div>
+      <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">月額 {yen(price.monthlyTotal)} ／ {price.upfrontTotal == null ? '初期費用小計' : '初期支払額'} {yen(price.upfrontTotal ?? price.upfrontSubtotal)} ／ 実質 {yen(price.effectiveTotal)}</div>
+      <label className="mt-3 block text-xs">ステータス<select value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm">{estimateStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="mt-3 block text-xs">顧客向け注意書き（前家賃の対象月・その他費用の内訳・退去時費用・特典条件）<textarea value={draft.customerNotes} onChange={(e) => setDraft({ ...draft, customerNotes: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={3} maxLength={3000} /></label>
+      <label className="mt-3 block text-xs">管理者メモ（顧客には非表示）<textarea value={draft.managerMemo} onChange={(e) => setDraft({ ...draft, managerMemo: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={2} maxLength={5000} /></label>
+    </fieldset>
     <div className="mt-4 flex flex-wrap gap-2">
-      <button onClick={save} disabled={Boolean(busy)} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white">{busy === 'save' ? '保存中…' : '保存'}</button>
-      <label className="cursor-pointer rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold">{busy === 'upload' ? 'アップロード中…' : '図面を添付'}<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" disabled={Boolean(busy)} onChange={(e) => { const file = e.target.files?.[0]; if (file) upload(file) }} /></label>
-      {estimate.hasFloorPlan && <button onClick={async () => openBlob(await fetchApiBlob(`/api/rental/estimates/${estimate.id}/floor-plan`))} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold">図面を確認</button>}
-      <button onClick={send} disabled={Boolean(busy)} className="rounded-lg bg-[#06C755] px-4 py-2 text-sm font-semibold text-white">{busy === 'send' ? '送信中…' : 'LINEで見積を送信'}</button>
+      <button onClick={() => save()} disabled={Boolean(busy) || Boolean(preview)} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white">保存</button>
+      <label className="cursor-pointer rounded-lg border px-4 py-2 text-sm">図面を添付<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" disabled={Boolean(busy) || Boolean(preview)} onChange={(e) => { const file = e.target.files?.[0]; if (file) upload(file) }} /></label>
+      {estimate.hasFloorPlan && <button onClick={async () => openBlob(await fetchApiBlob('/api/rental/estimates/' + estimate.id + '/floor-plan'))} className="rounded-lg border px-4 py-2 text-sm">図面を確認</button>}
+      <button onClick={() => save(true)} disabled={Boolean(busy) || Boolean(preview) || price.invalidDiscount || price.invalidCashback} className="rounded-lg bg-[#06C755] px-4 py-2 text-sm font-semibold text-white">保存して送信プレビュー</button>
     </div>
-    {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-    <p className="mt-3 break-all text-[10px] text-gray-300">estimate_id: {estimate.id}</p>
+    {(price.invalidDiscount || price.invalidCashback) && <p className="mt-3 text-sm text-red-600">割引・キャッシュバックが対象の費用を超えています。</p>}
+    {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+    {preview && <div role="dialog" aria-modal="true" aria-label="見積送信プレビュー" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-5"><h2 className="mb-3 text-lg font-bold">お客さんへの提示内容を確認</h2><QuotePreview estimate={preview} /><p className="mt-3 text-xs text-gray-500">管理者メモは表示されません。下の送信ボタンで見積を公開し、LINEに通知します。</p>{error && <p className="mt-3 text-sm text-red-600">{error}</p>}<div className="mt-4 flex gap-3"><button disabled={Boolean(busy)} onClick={() => { setPreview(null); onChanged() }} className="rounded-lg border px-4 py-2">閉じる</button><button disabled={Boolean(busy)} onClick={send} className="rounded-lg bg-[#06C755] px-4 py-2 text-white">{busy === 'send' ? '送信中…' : 'この内容をLINEで送信'}</button></div></section></div>}
   </div>
 }
 
 function QuoteRequestsTab() {
   const [items, setItems] = useState<QuoteRequest[]>([])
+  const dirtyIds = useRef(new Set<string>())
+  const onDirty = useCallback((id: string, dirty: boolean) => { if (dirty) dirtyIds.current.add(id); else dirtyIds.current.delete(id) }, [])
+  const [batchPreview, setBatchPreview] = useState<QuoteRequest | null>(null)
+  const [sendingBatch, setSendingBatch] = useState(false)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
-    setLoading(true); setError('')
+    setError('')
     try {
       const query = new URLSearchParams(); if (search) query.set('search', search); if (status) query.set('status', status)
       const response = await fetchApi<ApiResponse<QuoteRequest[]>>(`/api/rental/requests?${query}`)
@@ -150,17 +169,22 @@ function QuoteRequestsTab() {
 
   return <div className="space-y-4">
     <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row">
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="request_id・LINEユーザー・物件・部屋番号" className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-      <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm"><option value="">すべての状態</option>{estimateStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <input value={search} onChange={(e) => { if (dirtyIds.current.size) { setError('未保存の変更があります。保存してから検索条件を変えてください。'); return } setSearch(e.target.value) }} placeholder="request_id・LINEユーザー・物件・部屋番号" className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+      <select value={status} onChange={(e) => { if (dirtyIds.current.size) { setError('未保存の変更があります。保存してから表示条件を変えてください。'); return } setStatus(e.target.value) }} className="rounded-lg border border-gray-200 px-3 py-2 text-sm"><option value="">すべての状態</option>{estimateStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>
     {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {loading ? <p className="py-12 text-center text-sm text-gray-400">読み込み中…</p> : items.length === 0 ? <p className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-400">見積依頼はありません</p> : items.map((request) => <section key={request.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">{request.property_name}</h2><p className="mt-1 text-sm text-gray-500">{request.display_name || request.nickname} / {request.line_user_id}</p></div><Badge>{estimateStatusOptions.find(([value]) => value === request.status)?.[1] || request.status}</Badge></div>
       <div className="mt-3 grid gap-2 text-xs text-gray-500 sm:grid-cols-2 lg:grid-cols-4"><span>入居希望: {request.desired_move_in_date}</span><span>ペット: {request.has_pets ? 'あり' : 'なし'}</span><span>駐車場: {request.needs_parking ? '必要' : '不要'}</span><span>{new Date(request.created_at).toLocaleString('ja-JP')}</span></div>
+      {request.property_address && <p className="mt-2 text-xs">所在地：{request.property_address}</p>}
+      <p className="mt-2 text-xs text-gray-500">バイク：{request.has_motorbike ? 'あり' : 'なし'} ／ 駐輪場：{request.needs_bicycle_parking ? '必要' : '不要'}</p>
+      {request.condition_details && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-5">{request.condition_details}</p>}
       {request.property_url && <a href={request.property_url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-[#06C755] underline">{request.property_url}</a>}
       <p className="mt-2 break-all text-[10px] text-gray-300">request_id: {request.id}</p>
-      <div className="mt-4 space-y-3">{request.estimates.map((estimate) => <EstimateEditor key={estimate.id} estimate={estimate} onChanged={load} />)}</div>
+      <div className="mt-4 space-y-3">{request.estimates.map((estimate) => <EstimateEditor key={estimate.id} estimate={estimate} onChanged={load} onDirty={onDirty} />)}</div>
+      <button type="button" className="mt-4 rounded-lg border border-[#06C755] px-4 py-2 text-sm font-semibold text-[#049b43]" onClick={() => { if (dirtyIds.current.size) { setError('未保存の変更があります。各部屋の内容を保存してから一括送信してください。'); return } setBatchPreview(request) }}>保存済みの部屋をまとめて送信</button>
     </section>)}
+    {batchPreview && <div role="dialog" aria-modal="true" aria-label="複数部屋の見積送信プレビュー" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><section className="max-h-[90vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-xl bg-white p-5"><h2 className="text-lg font-bold">{batchPreview.property_name} の見積を確認</h2><p className="text-xs text-gray-500">下書きの保存内容を公開し、1通のLINE通知でまとめてご案内します。対象外・キャンセルは含みません。</p>{batchPreview.estimates.filter((e) => !['out_of_scope', 'cancelled'].includes(e.status)).map((e) => <QuotePreview key={e.id} estimate={e} />)}{error && <p className="text-sm text-red-600">{error}</p>}<div className="flex gap-3"><button disabled={sendingBatch} onClick={() => setBatchPreview(null)} className="rounded-lg border px-4 py-2">閉じる</button><button disabled={sendingBatch} className="rounded-lg bg-[#06C755] px-4 py-2 text-white" onClick={async () => { setSendingBatch(true); setError(''); try { const response = await fetchApi<ApiResponse<{ notificationSent: boolean }>>('/api/rental/requests/' + batchPreview.id + '/send', { method: 'POST', body: JSON.stringify({ revisions: batchPreview.estimates.filter((e) => !['out_of_scope', 'cancelled'].includes(e.status)).map((e) => ({ id: e.id, revision: e.revision })) }) }); if (!response.data.notificationSent) { setError('見積は公開済み、LINE通知は未完了です。同じボタンから再試行してください。'); return } setBatchPreview(null); load() } catch { setError('送信できませんでした。保存状態と月間配信上限を確認してください。') } finally { setSendingBatch(false) } }}>まとめてLINEで送信</button></div></section></div>}
   </div>
 }
 

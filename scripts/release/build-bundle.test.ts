@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { buildBundle } from './build-bundle.js';
 
 function makeTmpDir(prefix = 'build-bundle-test-'): string {
@@ -99,7 +99,7 @@ describe('buildBundle', () => {
       outPath: fx.outPath,
     });
 
-    const listing = execSync(`tar tzf ${fx.outPath}`, { encoding: 'utf8' })
+    const listing = execFileSync('tar', ['tzf', fx.outPath], { encoding: 'utf8' })
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
@@ -137,7 +137,7 @@ describe('buildBundle', () => {
 
     expect(existsSync(fx.outPath)).toBe(true);
 
-    const listing = execSync(`tar tzf ${fx.outPath}`, { encoding: 'utf8' })
+    const listing = execFileSync('tar', ['tzf', fx.outPath], { encoding: 'utf8' })
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);

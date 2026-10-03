@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import RentalLayout, { cardClass, primaryButtonClass } from '../components/RentalLayout.js';
 import { rentalApi } from '../lib/rental-api.js';
+import RentalPriceSummary from '../components/RentalPriceSummary.js';
 
 type PreviewData = Awaited<ReturnType<typeof rentalApi.preview>>;
 
@@ -20,6 +21,7 @@ export default function RentalApplicationConfirm() {
     rentalApi.preview(estimateId)
       .then((value) => {
         if (mounted) setData(value);
+        if (mounted && (value.alreadyRequested || value.existingApplication)) setDone(true);
       })
       .catch((err) => {
         if (mounted) setError(err instanceof Error ? err.message : '読み込みに失敗しました');
@@ -33,7 +35,8 @@ export default function RentalApplicationConfirm() {
     setSubmitting(true);
     setError('');
     try {
-      await rentalApi.requestApplication(estimateId);
+      if (!data) return;
+      await rentalApi.requestApplication(estimateId, data.revision);
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : '審査申込希望を送信できませんでした');
@@ -62,6 +65,7 @@ export default function RentalApplicationConfirm() {
 
       {data && !done && (
         <>
+          <section className={cardClass}><h2 className="font-bold">申込希望の対象：{data.propertyName} {data.roomNumber}</h2><RentalPriceSummary estimate={data.estimate} /></section>
           <section className={cardClass}>
             <p className="text-xs font-semibold text-gray-400">申込希望の対象</p>
             <h2 className="mt-2 text-lg font-bold">{data.propertyName}</h2>
@@ -86,7 +90,6 @@ export default function RentalApplicationConfirm() {
             <section className={`${cardClass} text-sm leading-6 text-gray-600`}>
               この部屋はすでに審査申込情報を受付済みです。担当者からの案内をお待ちください。
               <br />
-              application_id: {data.existingApplication.id}
             </section>
           ) : (
             <button className={primaryButtonClass} onClick={requestApplication} disabled={submitting}>

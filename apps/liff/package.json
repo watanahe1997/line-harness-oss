@@ -11,6 +11,7 @@
     "deploy": "pnpm build && wrangler pages deploy dist"
   },
   "dependencies": {
+    "@line-crm/shared": "workspace:*",
     "@line/liff": "^2.24.0",
     "hls.js": "^1.6.16",
     "react": "^19.0.0",

@@ -33,7 +33,7 @@ describe('independent plugin creation', () => {
     const target = createPlugin(resolve(root, 'my-plugin'))
     expect(() => createPlugin(target)).toThrow('存在')
     expect(() => createPlugin(resolve('my-plugin'))).toThrow('本体リポジトリの外')
-    symlinkSync(process.cwd(), resolve(root, 'checkout'), 'dir')
+    symlinkSync(process.cwd(), resolve(root, 'checkout'), process.platform === 'win32' ? 'junction' : 'dir')
     expect(() => createPlugin(resolve(root, 'checkout/my-plugin'))).toThrow('本体リポジトリの外')
   })
 

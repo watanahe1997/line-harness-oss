@@ -32,6 +32,7 @@ if (basePath && !basePath.startsWith('/')) {
 
 const nextConfig: NextConfig = {
   output: 'export',
+  outputFileTracingRoot: repoRoot,
   transpilePackages: ['@line-crm/shared'],
   basePath: basePath || undefined,
   assetPrefix: basePath || undefined,

@@ -36,6 +36,10 @@ export interface RentalQuoteRequest {
   friend_id: string;
   property_name: string;
   property_url: string | null;
+  property_address?: string | null;
+  condition_details?: string | null;
+  submission_key?: string | null;
+  receipt_sent_at?: string | null;
   desired_move_in_date: string;
   nickname: string;
   has_pets: number;
@@ -55,6 +59,13 @@ export interface RentalEstimate {
   sort_order: number;
   rent: number | null;
   management_fee: number | null;
+  monthly_other_cost: number | null;
+  pricing_version: number;
+  revision: number;
+  published_snapshot: string | null;
+  published_floor_plan_key: string | null;
+  send_lock: string | null;
+  send_lock_at: string | null;
   deposit: number | null;
   key_money: number | null;
   advance_rent: number | null;
@@ -84,6 +95,9 @@ export interface RentalEstimate {
 export interface CreateRentalQuoteRequestInput {
   friendId: string;
   propertyName: string;
+  propertyAddress?: string | null;
+  conditionDetails?: string | null;
+  submissionKey?: string | null;
   propertyUrl?: string | null;
   roomNumbers: string[];
   desiredMoveInDate: string;
@@ -97,8 +111,13 @@ export interface CreateRentalQuoteRequestInput {
 export async function createRentalQuoteRequest(
   db: D1Database,
   input: CreateRentalQuoteRequestInput,
-): Promise<{ requestId: string; estimates: Array<{ id: string; roomNumber: string }> }> {
+): Promise<{ requestId: string; estimates: Array<{ id: string; roomNumber: string }>; duplicate: boolean }> {
   const requestId = crypto.randomUUID();
+  const signature = JSON.stringify([input.propertyName, input.propertyUrl ?? null, input.propertyAddress ?? null,
+    input.conditionDetails ?? null, input.roomNumbers, input.desiredMoveInDate, input.nickname,
+    input.hasPets, input.needsParking, input.hasMotorbike, input.needsBicycleParking]);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signature));
+  const submissionHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
   const now = jstNow();
   const estimates = input.roomNumbers.map((roomNumber) => ({
     id: crypto.randomUUID(),
@@ -109,15 +128,17 @@ export async function createRentalQuoteRequest(
     db.prepare(
       `INSERT INTO rental_quote_requests (
          id, friend_id, property_name, property_url, desired_move_in_date,
-         nickname, has_pets, needs_parking, has_motorbike,
+         property_address, condition_details, submission_key, submission_hash, nickname, has_pets, needs_parking, has_motorbike,
          needs_bicycle_parking, status, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'quote_pending', ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'quote_pending', ?, ?)`,
     ).bind(
       requestId,
       input.friendId,
       input.propertyName,
       input.propertyUrl ?? null,
       input.desiredMoveInDate,
+      input.propertyAddress ?? null, input.conditionDetails ?? null, input.submissionKey ?? null,
+      submissionHash,
       input.nickname,
       input.hasPets ? 1 : 0,
       input.needsParking ? 1 : 0,
@@ -129,14 +150,24 @@ export async function createRentalQuoteRequest(
     ...estimates.map((estimate, index) =>
       db.prepare(
         `INSERT INTO rental_estimates (
-           id, request_id, room_number, sort_order, status, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, 'quote_pending', ?, ?)`,
+           id, request_id, room_number, sort_order, pricing_version, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 1, 'quote_pending', ?, ?)`,
       ).bind(estimate.id, requestId, estimate.roomNumber, index, now, now),
     ),
   ];
 
-  await db.batch(statements);
-  return { requestId, estimates };
+  try { await db.batch(statements); }
+  catch (error) {
+    if (!input.submissionKey) throw error;
+    const existing = await db.prepare('SELECT id, submission_hash FROM rental_quote_requests WHERE friend_id = ? AND submission_key = ?')
+      .bind(input.friendId, input.submissionKey).first<{ id: string; submission_hash: string | null }>();
+    if (!existing) throw error;
+    if (existing.submission_hash !== submissionHash) throw new Error('rental_submission_conflict');
+    const rooms = await db.prepare('SELECT id, room_number FROM rental_estimates WHERE request_id = ? ORDER BY sort_order')
+      .bind(existing.id).all<{ id: string; room_number: string }>();
+    return { requestId: existing.id, estimates: rooms.results.map((row) => ({ id: row.id, roomNumber: row.room_number })), duplicate: true };
+  }
+  return { requestId, estimates, duplicate: false };
 }
 
 export async function getRentalRequestOwnedByLineUser(

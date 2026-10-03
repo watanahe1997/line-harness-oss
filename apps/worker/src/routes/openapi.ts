@@ -15,6 +15,7 @@ const spec = {
   security: [{ bearerAuth: [] }],
   components: {
     securitySchemes: {
+      lineIdToken: { type: 'http', scheme: 'bearer', description: 'LINE Login ID token verified by the server' },
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
@@ -180,7 +181,8 @@ const spec = {
     // ── Friends ─────────────────────────────────────────────────────────────
     '/api/friends': {
       get: {
-        tags: ['Friends'],
+        tags: [
+    { name: 'Rental', description: '賃貸の神：見積依頼・提示・審査申込希望' },'Friends'],
         summary: '友だち一覧取得',
         parameters: [
           { name: 'limit', in: 'query', schema: { type: 'integer', default: 50 } },
@@ -971,6 +973,1297 @@ const spec = {
     },
     '/api/webinars/{id}/user-comments': {
       get: { tags: ['Webinars'], summary: '視聴者の生コメント一覧', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Comments' } } },
+    },
+    '/api/liff/rental/settings': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/settings",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/quote-requests': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "概算見積の依頼（submissionKeyで重複を防止）",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/estimates",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/requests': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/requests",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates/{id}/versions': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "提示済み見積の過去の版",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/requests/{id}/estimates': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/requests/{id}/estimates",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates/{id}/floor-plan': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "認証付き図面",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates/{id}/application-preview': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "審査申込希望の確認",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates/{id}/application-request': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "この部屋で審査申込を希望する",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/liff/rental/estimates/{id}/applications': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/estimates/{id}/applications",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/liff/rental/applications/{id}/identity': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/liff/rental/applications/{id}/identity",
+        description: "LINE Login IDトークンをサーバーで検証し、依頼者本人のみアクセスできます。未送信の費用・管理者メモは公開しません。",
+        security: [
+          {
+            lineIdToken: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/settings': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/settings",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      },
+      patch: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/settings",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/requests': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/requests",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/requests/{id}': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/requests/{id}",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/estimates/{id}': {
+      patch: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/estimates/{id}",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/estimates/{id}/floor-plan': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "認証付き図面",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      },
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "認証付き図面",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/estimates/{id}/send': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "保存済みの版を公開しLINEに通知（失敗時は同じ版で再試行）",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/requests/{id}/send': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "保存済みの版を公開しLINEに通知（失敗時は同じ版で再試行）",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/applications/export.csv': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "申込情報のCSV（Owner/Admin）",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/applications': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/applications/{id}/identity': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications/{id}/identity",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/applications/{id}': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications/{id}",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      },
+      patch: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications/{id}",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      },
+      delete: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications/{id}",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rental/applications/{id}/message': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/applications/{id}/message",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string"
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/retention/run': {
+      post: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/retention/run",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        },
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: true
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/rental/audit-logs': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "賃貸の神：/api/rental/audit-logs",
+        description: "管理者セッションまたはAPIキーと、ルートに定義した役割権限が必要です。金額の保存・図面の添付・送信には保存済みの expectedRevision を指定します。",
+        security: [
+          {
+            bearerAuth: []
+          }
+        ],
+        responses: {
+          "200": {
+            description: "成功（success/data）。送信時は notificationSent=false でも見積が公開済みの場合があります。"
+          },
+          "400": {
+            description: "入力不正"
+          },
+          "401": {
+            description: "本人確認失敗"
+          },
+          "403": {
+            description: "権限不足"
+          },
+          "404": {
+            description: "対象なし"
+          },
+          "409": {
+            description: "版の競合・状態の不整合・配信上限"
+          }
+        }
+      }
+    },
+    '/api/rich-menus/default': {
+      get: {
+        tags: [
+          "Rental"
+        ],
+        summary: "現在のデフォルトリッチメニューを確認",
+        responses: {
+          "200": {
+            description: "デフォルトのLINEリッチメニューID"
+          }
+        }
+      }
     },
     '/webhook': {
       post: {
