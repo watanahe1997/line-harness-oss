@@ -55,6 +55,8 @@ describe('rental upgrade with transactional SQLite and mocked LINE only', () => 
       return Response.json({});
     });
     expect(await publish()).toMatchObject({ published: true, notificationSent: false });
+    const pending: any = await (await app.request('/api/rental/requests', {}, env())).json();
+    expect(pending.data[0].estimates.find((e: any) => e.id === estimateId).notificationStatus).toBe('failed');
     await publish(); const keys = pushes.map((p) => p.options.headers['X-Line-Retry-Key']);
     // First failed request was handled by the one-off mock, while retry is captured.
     expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]); expect(keys[0]).toBe(sqlite.prepare('SELECT id FROM rental_quote_deliveries').get()!.id);
@@ -65,6 +67,11 @@ describe('rental upgrade with transactional SQLite and mocked LINE only', () => 
   test('publishes multiple rooms with one push and one persisted retry key', async () => {
     const rows = sqlite.prepare('SELECT id, revision FROM rental_estimates').all() as any[]; await publish(rows as any);
     expect(pushes).toHaveLength(1); expect(sqlite.prepare('SELECT COUNT(*) AS n FROM rental_estimate_versions').get()!.n).toBe(2);
+  });
+  test('admin search returns only the matching property', async () => {
+    await createRentalQuoteRequest(db, { friendId: 'friend-b', propertyName: '別の物件', roomNumbers: ['301'], nickname: 'other', desiredMoveInDate: '未定', hasPets: false, needsParking: false, hasMotorbike: false, needsBicycleParking: false });
+    const result: any = await (await app.request('/api/rental/requests?search=' + encodeURIComponent('テスト物件'), {}, env())).json();
+    expect(result.data).toHaveLength(1); expect(result.data[0].id).toBe(requestId);
   });
   test('submission key deduplicates repeat submits per customer and rolls back new rooms', async () => {
     const input = { friendId: 'friend-a', propertyName: '新しい物件', roomNumbers: ['301'], nickname: 'test', desiredMoveInDate: '未定', hasPets: false, needsParking: false, hasMotorbike: false, needsBicycleParking: false, submissionKey: '11111111-1111-1111-1111-111111111111' };

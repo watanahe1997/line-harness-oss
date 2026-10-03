@@ -157,15 +157,17 @@ function QuoteRequestsTab() {
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const loadSequence = useRef(0)
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current
     setError('')
     try {
       const query = new URLSearchParams(); if (search) query.set('search', search); if (status) query.set('status', status)
       const response = await fetchApi<ApiResponse<QuoteRequest[]>>(`/api/rental/requests?${query}`)
-      setItems(response.data)
-    } catch { setError('見積依頼を読み込めませんでした') } finally { setLoading(false) }
+      if (sequence === loadSequence.current) setItems(response.data)
+    } catch { if (sequence === loadSequence.current) setError('見積依頼を読み込めませんでした') } finally { if (sequence === loadSequence.current) setLoading(false) }
   }, [search, status])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); return () => { loadSequence.current++ } }, [load])
 
   return <div className="space-y-4">
     <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row">
