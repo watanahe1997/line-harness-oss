@@ -47,7 +47,7 @@ export type AdminAuthEnv = {
 
 /**
  * Public-suffix-style multi-tenant hosts where every subdomain is its own
- * registrable site. `line-crm-admin.pages.dev` and `x.workers.dev` are
+ * registrable site. `your-admin.pages.dev` and `x.workers.dev` are
  * therefore cross-site to each other. Not a full PSL — just the suffixes this
  * deployment topology actually uses.
  */
@@ -135,6 +135,38 @@ export function parseAllowedOrigins(env: AdminAuthEnv): string[] {
     .filter((value): value is string => Boolean(value));
 }
 
+function isCloudflarePagesOrigin(value: URL): boolean {
+  return value.hostname.toLowerCase().endsWith('.pages.dev');
+}
+
+/**
+ * Cloudflare Pages exposes both the production project origin
+ * (`https://project.pages.dev`) and deployment/branch preview origins such as
+ * `https://hash.project.pages.dev`. Operators often click the preview URL that
+ * Wrangler prints immediately after deploy, so treat origins inside the same
+ * Pages project as equivalent for the admin allowlist.
+ */
+export function isAllowedAdminOrigin(origin: string, allowedOrigin: string): boolean {
+  const normalizedOrigin = normalizeOrigin(origin);
+  const normalizedAllowed = normalizeOrigin(allowedOrigin);
+  if (!normalizedOrigin || !normalizedAllowed) return false;
+  if (stripTrailingSlash(normalizedOrigin) === stripTrailingSlash(normalizedAllowed)) {
+    return true;
+  }
+
+  try {
+    const candidate = new URL(normalizedOrigin);
+    const allowed = new URL(normalizedAllowed);
+    if (candidate.protocol !== allowed.protocol) return false;
+    if (!isCloudflarePagesOrigin(candidate) || !isCloudflarePagesOrigin(allowed)) {
+      return false;
+    }
+    return registrableDomain(candidate.hostname) === registrableDomain(allowed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function resolveAdminAuthConfig(
   env: AdminAuthEnv,
   opts: { requestOrigin?: string } = {},
@@ -204,8 +236,49 @@ export function resolveCorsOrigin(
   }
 
   const { allowedOrigins } = resolveAdminAuthConfig(env);
-  const allowed = new Set(
-    [...allowedOrigins, requestOrigin].filter(Boolean).map(stripTrailingSlash),
-  );
-  return allowed.has(stripTrailingSlash(origin)) ? origin : '';
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return '';
+
+  if (
+    requestOrigin &&
+    stripTrailingSlash(normalizedOrigin) === stripTrailingSlash(requestOrigin)
+  ) {
+    return normalizedOrigin;
+  }
+
+  if (allowedOrigins.some((allowedOrigin) => isAllowedAdminOrigin(normalizedOrigin, allowedOrigin))) {
+    return normalizedOrigin;
+  }
+  if (allowedOrigins.length === 0 && /^https?:\/\//.test(normalizedOrigin)) {
+    warnMissingAdminOrigin(env, requestUrl);
+  }
+  return '';
+}
+
+// Advisory diagnostic only: one fixed-size message per loaded Worker module.
+// The latch retains no request data or environment object, and never affects
+// authorization. A first anonymous auth probe can consume this one message.
+let warnedMissingAdminOrigin = false;
+
+function warnMissingAdminOrigin(env: AdminAuthEnv, requestUrl: string): void {
+  if (warnedMissingAdminOrigin) return;
+  let pathname: string;
+  try {
+    pathname = new URL(requestUrl).pathname;
+  } catch {
+    return;
+  }
+  if (!pathname.startsWith('/api/auth/')) return;
+
+  const configured = Boolean(env.ADMIN_ORIGIN?.trim());
+  warnedMissingAdminOrigin = true;
+  // Do not interpolate Origin, pathname, or the configured value: all can
+  // contain misleading text, and a mistaken secret value must not be logged.
+  console.warn(JSON.stringify({
+    component: 'admin-auth',
+    code: configured ? 'admin_origin_invalid' : 'admin_origin_empty',
+    message: configured
+      ? 'ADMIN_ORIGIN is set but contains no parseable origins. Use an absolute admin URL including https://. See docs/ADMIN-AUTH.md.'
+      : 'ADMIN_ORIGIN is empty. Set it to the admin URL; enable ADMIN_ALLOW_CROSS_SITE for the Pages/Workers topology. See docs/ADMIN-AUTH.md.',
+  }));
 }
