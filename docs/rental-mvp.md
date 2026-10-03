@@ -16,6 +16,8 @@
 
 更新用DB計画は `scripts/rental/migration-plan.ts`、本番への適用は `scripts/rental/upgrade-database.ts apply` を使います。適用前にD1 Time Travelの復旧地点を `.wrangler/rental-upgrade/` に記録し、既存テーブルへの追加変更だけを適用します。過去の行動へのマイル付与処理を除外した方針とファイルハッシュを専用台帳に記録し、通常のマイグレーション台帳にも導入済みファイルを登録します。APIキーやLINEの認証情報は変更しません。
 
+顧客画面は共通の金額計算パッケージを使うため、新しい環境では `pnpm --filter @line-crm/shared build` の後に `pnpm --filter liff build` を実行します。Cloudflare Pagesの顧客画面プロジェクトにもこの順序を設定しています。
+
 ## 1. 既存機能の調査結果
 
 流用した機能:
