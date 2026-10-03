@@ -14,6 +14,7 @@ async function api(path: string, body?: unknown) {
   if (!response.ok || !parsed.success) throw new Error(JSON.stringify(parsed.errors?.map((error: any) => ({ code: error.code, message: error.message })) ?? response.status));
   return parsed.result;
 }
+async function main() {
 const plan = rentalMigrationPlan();
 if (process.argv[2] !== 'apply') {
   console.log(JSON.stringify(plan.map(({ name, statements, skippedMileageBackfills }) => ({ name, statements: statements.length, skippedMileageBackfills })), null, 2));
@@ -59,3 +60,5 @@ if (process.argv[2] !== 'apply') {
   const previous = before[0].results[0], current = after[0].results[0];
   if (['friends', 'requests', 'estimates', 'applications', 'messages'].some((key) => current[key] < previous[key]) || current.unique_chats < previous.unique_chats || current.missing_snapshots || current.changed_legacy_amounts || current.mileage_grants || current.active_mileage_rules || current.active_mileage_reply) throw new Error('Post-migration verification failed; inspect the saved recovery bookmark before deploying');
 }
+}
+main().catch((error) => { console.error(error.message); process.exitCode = 1; });
