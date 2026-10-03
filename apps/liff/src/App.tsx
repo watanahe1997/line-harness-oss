@@ -7,6 +7,7 @@ import EventDone from './pages/EventDone.js';
 import EventBookings from './pages/EventBookings.js';
 import RentalQuoteRequest from './pages/RentalQuoteRequest.js';
 import RentalEstimates from './pages/RentalEstimates.js';
+import RentalEstimateHistory from './pages/RentalEstimateHistory.js';
 import RentalApplicationConfirm from './pages/RentalApplicationConfirm.js';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/events/:id/done" element={<EventDone />} />
       <Route path="/events/:id" element={<Event />} />
       <Route path="/rental/quote" element={<RentalQuoteRequest />} />
+      <Route path="/rental/estimates" element={<RentalEstimateHistory />} />
       <Route path="/rental/requests/:requestId" element={<RentalEstimates />} />
       <Route path="/rental/estimates/:estimateId/confirm" element={<RentalApplicationConfirm />} />
       <Route path="/" element={<Navigate to="/booking" replace />} />

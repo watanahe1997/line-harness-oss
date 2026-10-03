@@ -1,0 +1,16 @@
+{
+  "size": { "width": 2500, "height": 843 },
+  "selected": true,
+  "name": "賃貸の神｜見積依頼・概算見積一覧",
+  "chatBarText": "見積メニュー",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 1250, "height": 843 },
+      "action": { "type": "uri", "label": "見積を依頼する", "uri": "https://liff.line.me/2010513590-ykl7sU53/rental/quote?liffId=2010513590-ykl7sU53" }
+    },
+    {
+      "bounds": { "x": 1250, "y": 0, "width": 1250, "height": 843 },
+      "action": { "type": "uri", "label": "概算見積を見る", "uri": "https://liff.line.me/2010513590-ykl7sU53/rental/estimates?liffId=2010513590-ykl7sU53" }
+    }
+  ]
+}

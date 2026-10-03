@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchApi, fetchApiBlob } from '@/lib/api'
+import RentalRichMenu from '@/components/rental-rich-menu'
 
 type ApiResponse<T> = { success: boolean; data: T; error?: string }
 
@@ -235,5 +236,6 @@ export default function RentalPage() {
   return <div><div className="mb-6"><p className="text-sm font-semibold text-[#06C755]">賃貸仲介MVP</p><h1 className="mt-1 text-2xl font-bold">見積・審査申込</h1><p className="mt-2 text-sm text-gray-500">概算見積の作成から申込情報の確認までを管理します。</p></div>
     <div className="mb-5 flex gap-1 rounded-xl bg-gray-100 p-1">{([['quotes', '概算見積'], ['applications', '審査申込'], ['settings', '安全設定']] as const).map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${tab === value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>{label}</button>)}</div>
     {tab === 'quotes' && <QuoteRequestsTab />}{tab === 'applications' && (role === 'staff' ? <p className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">審査申込の個人情報はOwner/Adminのみ閲覧できます。</p> : <ApplicationsTab role={role} />)}{tab === 'settings' && <SettingsTab role={role} />}
+    {(role === 'owner' || role === 'admin') && <RentalRichMenu />}
   </div>
 }

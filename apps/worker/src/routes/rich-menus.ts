@@ -5,6 +5,16 @@ import type { Env } from '../index.js';
 
 const richMenus = new Hono<Env>();
 
+// Read back the actual LINE default after setting a menu.
+richMenus.get('/api/rich-menus/default', async (c) => {
+  try {
+    const lineClient = await resolveLineClient(c);
+    return c.json({ success: true, data: { richMenuId: await lineClient.getDefaultRichMenuId() } });
+  } catch {
+    return c.json({ success: false, error: '標準リッチメニューを確認できませんでした' }, 502);
+  }
+});
+
 /** Resolve LINE access token — uses accountId query param if provided, otherwise default */
 async function resolveLineClient(c: { env: Env['Bindings']; req: { query(key: string): string | undefined } }): Promise<LineClient> {
   const accountId = c.req.query('accountId');

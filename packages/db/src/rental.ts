@@ -151,6 +151,24 @@ export async function getRentalRequestOwnedByLineUser(
   ).bind(requestId, lineUserId).first<RentalQuoteRequest>();
 }
 
+/** Only quotes actually sent to this customer belong in the rich-menu history. */
+export async function listRentalPresentedEstimatesOwnedByLineUser(
+  db: D1Database,
+  lineUserId: string,
+): Promise<Array<RentalEstimate & { property_name: string; property_url: string | null; request_created_at: string }>> {
+  return (await db.prepare(
+    `SELECT e.*, r.property_name, r.property_url, r.created_at AS request_created_at
+     FROM rental_estimates e
+     JOIN rental_quote_requests r ON r.id = e.request_id
+     JOIN friends f ON f.id = r.friend_id
+     WHERE f.line_user_id = ? AND e.sent_at IS NOT NULL
+       AND e.deleted_at IS NULL AND r.deleted_at IS NULL
+     ORDER BY e.sent_at DESC, r.id, e.sort_order, e.id`,
+  ).bind(lineUserId).all<RentalEstimate & {
+    property_name: string; property_url: string | null; request_created_at: string;
+  }>()).results;
+}
+
 export async function getRentalEstimateOwnedByLineUser(
   db: D1Database,
   estimateId: string,

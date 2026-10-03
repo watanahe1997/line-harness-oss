@@ -9,6 +9,7 @@ import {
   getLineAccountById,
   getRentalEstimateOwnedByLineUser,
   getRentalRequestOwnedByLineUser,
+  listRentalPresentedEstimatesOwnedByLineUser,
   getTags,
   jstNow,
   removeTagFromFriend,
@@ -320,13 +321,40 @@ rental.post('/api/liff/rental/quote-requests', async (c) => {
   }
 });
 
+rental.get('/api/liff/rental/estimates', async (c) => {
+  const identity = await liffIdentity(c);
+  if (identity instanceof Response) return identity;
+  const rows = await listRentalPresentedEstimatesOwnedByLineUser(c.env.DB, identity.lineUserId);
+  const requests = new Map<string, {
+    id: string; propertyName: string; propertyUrl: string | null; createdAt: string;
+    estimates: ReturnType<typeof serializeEstimate>[];
+  }>();
+  for (const row of rows) {
+    let request = requests.get(row.request_id);
+    if (!request) {
+      request = {
+        id: row.request_id, propertyName: row.property_name,
+        propertyUrl: row.property_url, createdAt: row.request_created_at, estimates: [],
+      };
+      requests.set(row.request_id, request);
+    }
+    request.estimates.push(serializeEstimate(row));
+  }
+  await writeRentalAuditLog(c.env.DB, {
+    actorType: 'line_user', actorId: identity.lineUserId, action: 'view',
+    entityType: 'quote_history', entityId: identity.friend.id,
+  });
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ success: true, data: { requests: [...requests.values()], estimateCount: rows.length } });
+});
+
 rental.get('/api/liff/rental/requests/:id/estimates', async (c) => {
   const identity = await liffIdentity(c);
   if (identity instanceof Response) return identity;
   const request = await getRentalRequestOwnedByLineUser(c.env.DB, c.req.param('id'), identity.lineUserId);
   if (!request) return c.json({ success: false, error: '見積依頼が見つかりません' }, 404);
   const estimates = await c.env.DB.prepare(
-    `SELECT * FROM rental_estimates WHERE request_id = ? AND deleted_at IS NULL ORDER BY sort_order`,
+    `SELECT * FROM rental_estimates WHERE request_id = ? AND sent_at IS NOT NULL AND deleted_at IS NULL ORDER BY sort_order`,
   ).bind(request.id).all<RentalEstimate>();
   await writeRentalAuditLog(c.env.DB, {
     actorType: 'line_user', actorId: identity.lineUserId, action: 'view',

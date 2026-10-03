@@ -47,9 +47,17 @@ export type RentalEstimate = {
   customerNotes: string | null;
   hasFloorPlan: boolean;
   floorPlanName: string | null;
+  sentAt: string | null;
 };
 
 export const rentalApi = {
+  history: () => request<{
+    requests: Array<{
+      id: string; propertyName: string; propertyUrl: string | null; createdAt: string;
+      estimates: RentalEstimate[];
+    }>;
+    estimateCount: number;
+  }>('/api/liff/rental/estimates'),
   settings: () => request<{ privacyPolicyUrl: string | null; identityUploadEnabled: boolean }>('/api/liff/rental/settings'),
   createQuote: (body: Record<string, unknown>) => request<{
     requestId: string;

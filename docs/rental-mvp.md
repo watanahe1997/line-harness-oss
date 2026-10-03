@@ -71,6 +71,7 @@ npx wrangler d1 execute line-crm --env production --remote --file=packages/db/mi
 LIFF:
 
 - `/rental/quote`: 概算見積依頼
+- `/rental/estimates`: 本人に提示済みの全依頼・全物件の概算見積一覧（最新提示順）
 - `/rental/requests/:request_id`: 本人限定の見積一覧・図面
 - `/rental/estimates/:estimate_id/confirm`: 申込対象確認
 - `/rental/estimates/:estimate_id/apply`: 審査申込
@@ -82,6 +83,7 @@ LIFF:
 代表API:
 
 - `POST /api/liff/rental/quote-requests`
+- `GET /api/liff/rental/estimates`: LINE本人確認後、送信日時のある本人の見積だけを返す。未送信・削除済みは除外し、申込後・成約後の見積も残す。
 - `GET /api/liff/rental/requests/:id/estimates`
 - `GET /api/liff/rental/estimates/:id/floor-plan`
 - `POST /api/liff/rental/estimates/:id/applications`
@@ -117,6 +119,17 @@ LIFF:
 ```text
 https://liff.line.me/<LIFF_ID>/rental/quote
 ```
+
+### 共通の見積リッチメニュー
+
+現在の単一アカウント構成では、管理画面 `/rental` 下部の「公式LINEの見積メニュー」から設定できる。Owner/Adminに操作を表示し、既存の管理認証とCSRFでLINEに登録する。接続済みの環境変数の公式LINEを対象にする。
+
+- 左: 「見積を依頼する」→ `/rental/quote`
+- 右: 「概算見積を見る」→ `/rental/estimates`
+- 画像: `assets/rental-rich-menu/rental-rich-menu.png`（2500×843）、リンク定義: 同ディレクトリ `rich-menu.json`
+- 同じ名前・リンク・寸法のメニューがあれば再利用し、画像登録後に標準メニューへ設定する。旧メニューは削除しない。
+- LINEの標準メニューIDをAPIから読み戻して設定完了を確認する。個別メニューは標準より優先されるため、該当する顧客は個別設定も別途確認する。
+- 一覧から既存の物件別画面で内訳・図面・審査申込希望を確認できる。物件別画面も未送信の部屋は表示しない。
 
 ## 6. ローカル起動
 
