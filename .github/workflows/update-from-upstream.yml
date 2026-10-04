@@ -60,11 +60,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr create \
-            --base main \
-            --head "${{ steps.branch.outputs.name }}" \
-            --title "chore: update from upstream" \
-            --body "This PR imports the latest Shudesu/line-harness-oss main into this fork.\n\nMerge this PR to receive upstream fixes and features, then let the existing Cloudflare deploy workflows update your environment."
+          # Use the REST endpoint so failures include the HTTP status and API
+          # message rather than only a GraphQL integration error.
+          body=$(cat <<'EOF'
+          This PR imports the latest Shudesu/line-harness-oss main into this fork.
+
+          Review and test this update before merging it. Merging may trigger the existing Cloudflare deploy workflows.
+          EOF
+          )
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f base=main \
+            -f head="${{ steps.branch.outputs.name }}" \
+            -f title="chore: update from upstream" \
+            -f body="$body" \
+            --jq '.html_url'
 
       - name: No upstream changes
         if: steps.detect.outputs.has_changes == 'false'
