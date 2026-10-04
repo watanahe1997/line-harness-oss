@@ -30,7 +30,18 @@ jobs:
 
       - name: Detect upstream changes
         id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          existing_pr=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f state=open -f base=main --paginate \
+            --jq ".[] | select(.head.repo.full_name == \"${GITHUB_REPOSITORY}\" and (.head.ref | startswith(\"upstream/update-\"))) | .html_url")
+          if [ -n "$existing_pr" ]; then
+            echo "An upstream update is already awaiting review: $existing_pr"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "pending_pr=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
@@ -76,5 +87,5 @@ jobs:
             --jq '.html_url'
 
       - name: No upstream changes
-        if: steps.detect.outputs.has_changes == 'false'
+        if: steps.detect.outputs.has_changes == 'false' && steps.detect.outputs.pending_pr != 'true'
         run: echo "Fork is already up to date with upstream/main."
